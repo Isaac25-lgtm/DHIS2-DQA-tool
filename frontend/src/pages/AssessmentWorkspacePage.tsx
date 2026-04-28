@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileCheck2, RefreshCcw, Save, Send } from "lucide-react";
+import { RefreshCcw, Save, Send } from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
 import { AssessmentSummaryCard } from "../components/assessment/AssessmentSummaryCard";
 import { AssessmentValueTable } from "../components/assessment/AssessmentValueTable";
-import { SourceDocumentChecklist } from "../components/assessment/SourceDocumentChecklist";
 import { SyncBanner } from "../components/sync/SyncBanner";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Textarea } from "../components/ui/Textarea";
-import { useAutoSaveDraft, toDraftSourceDocumentChecks, toDraftValueInputs } from "../hooks/useAutoSaveDraft";
+import { useAutoSaveDraft, toDraftValueInputs } from "../hooks/useAutoSaveDraft";
 import { useAuth } from "../hooks/useAuth";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { assessmentWorkspaceService } from "../services/assessmentWorkspaceService";
@@ -25,9 +24,6 @@ import type {
   AssessmentDraft,
   AssessmentWorkspace,
   DqaValue,
-  DraftSourceDocumentCheckInput,
-  DraftValueInput,
-  SourceDocumentCheckInput,
   SyncDraftResult,
 } from "../types";
 
@@ -71,20 +67,6 @@ function buildEditableValues(workspace: AssessmentWorkspace): DqaValue[] {
   });
 }
 
-function buildSourceDocumentChecks(workspace: AssessmentWorkspace): SourceDocumentCheckInput[] {
-  return workspace.source_document_requirements.map((requirement) => {
-    const existing = workspace.source_document_checks.find((item) => item.source_document_name === requirement.name);
-    return {
-      source_document_name: requirement.name,
-      available: existing?.available ?? null,
-      complete: existing?.complete ?? null,
-      legible: existing?.legible ?? null,
-      missing_pages: existing?.missing_pages ?? null,
-      comment: existing?.comment ?? null,
-    };
-  });
-}
-
 function mergeDraftIntoValues(serverValues: DqaValue[], draft: AssessmentDraft | null): DqaValue[] {
   if (!draft) {
     return serverValues;
@@ -101,23 +83,6 @@ function mergeDraftIntoValues(serverValues: DqaValue[], draft: AssessmentDraft |
       hmis105_value: local.hmis105_value,
       assessor_comment: local.assessor_comment,
     };
-  });
-}
-
-function mergeDraftIntoChecks(
-  serverChecks: SourceDocumentCheckInput[],
-  draft: AssessmentDraft | null,
-): DraftSourceDocumentCheckInput[] {
-  const draftMap = new Map(draft?.source_document_checks.map((item) => [item.source_document_name, item]) ?? []);
-  return serverChecks.map((item) => {
-    const local = draftMap.get(item.source_document_name);
-    if (!local) {
-      return {
-        ...item,
-        updated_at_client: draft?.last_saved_at ?? new Date().toISOString(),
-      };
-    }
-    return local;
   });
 }
 
@@ -144,7 +109,6 @@ export function AssessmentWorkspacePage() {
   const { isOnline, wasOffline } = useNetworkStatus();
   const [workspace, setWorkspace] = useState<AssessmentWorkspace | null>(null);
   const [editableValues, setEditableValues] = useState<DqaValue[]>([]);
-  const [sourceDocumentChecks, setSourceDocumentChecks] = useState<DraftSourceDocumentCheckInput[]>([]);
   const [generalAssessmentComment, setGeneralAssessmentComment] = useState("");
   const [seedDraft, setSeedDraft] = useState<AssessmentDraft | null>(null);
   const [loading, setLoading] = useState(true);
@@ -176,7 +140,6 @@ export function AssessmentWorkspacePage() {
           setError("This assessment is not available offline. Please connect to the internet and open it once first.");
           setWorkspace(null);
           setEditableValues([]);
-          setSourceDocumentChecks([]);
           setSeedDraft(localDraft);
           setLoading(false);
           return;
@@ -184,10 +147,8 @@ export function AssessmentWorkspacePage() {
 
         const cachedWorkspace = cached.workspace;
         const mergedValues = mergeDraftIntoValues(buildEditableValues(cachedWorkspace), localDraft);
-        const mergedChecks = mergeDraftIntoChecks(buildSourceDocumentChecks(cachedWorkspace), localDraft);
         setWorkspace(cachedWorkspace);
         setEditableValues(mergedValues);
-        setSourceDocumentChecks(mergedChecks);
         setGeneralAssessmentComment(localDraft?.general_assessment_comment ?? cachedWorkspace.assessment_facility.general_assessment_comment ?? "");
         setSeedDraft(localDraft);
         setHasConflict(false);
@@ -202,9 +163,7 @@ export function AssessmentWorkspacePage() {
 
       setWorkspace(nextWorkspace);
       const mergedValues = mergeDraftIntoValues(buildEditableValues(nextWorkspace), localDraft);
-      const mergedChecks = mergeDraftIntoChecks(buildSourceDocumentChecks(nextWorkspace), localDraft);
       setEditableValues(mergedValues);
-      setSourceDocumentChecks(mergedChecks);
       setGeneralAssessmentComment(localDraft?.general_assessment_comment ?? nextWorkspace.assessment_facility.general_assessment_comment ?? "");
       setSeedDraft(localDraft);
       setHasConflict(Boolean(localDraft && localDraft.sync_status !== "SYNCED"));
@@ -237,15 +196,10 @@ export function AssessmentWorkspacePage() {
     [editableValues, seedDraft],
   );
 
-  const draftChecks = useMemo(
-    () => toDraftSourceDocumentChecks(sourceDocumentChecks, seedDraft),
-    [seedDraft, sourceDocumentChecks],
-  );
-
   const { draftState, status: autoSaveStatus, statusMessage, saveNow } = useAutoSaveDraft({
     assessmentFacilityId,
     values: draftValues,
-    sourceDocumentChecks: draftChecks,
+    sourceDocumentChecks: [],
     generalAssessmentComment: generalAssessmentComment || null,
     enabled: Boolean(workspace && workspace.workspace_mode === "EDIT" && !isReviewRoute),
     seedDraft,
@@ -294,18 +248,6 @@ export function AssessmentWorkspacePage() {
     );
   };
 
-  const updateSourceDocumentChecks = (nextChecks: SourceDocumentCheckInput[]) => {
-    const timestamp = new Date().toISOString();
-    setSourceDocumentChecks(
-      nextChecks.map((item) => ({
-        ...item,
-        updated_at_client:
-          sourceDocumentChecks.find((existing) => existing.source_document_name === item.source_document_name)
-            ?.updated_at_client ?? timestamp,
-      })),
-    );
-  };
-
   const handleSaveOnline = async () => {
     if (!assessmentFacilityId || !workspace) {
       return;
@@ -323,7 +265,6 @@ export function AssessmentWorkspacePage() {
           assessor_comment: item.assessor_comment,
         })),
       );
-      await dqaValueService.saveSourceDocuments(assessmentFacilityId, sourceDocumentChecks);
       await dqaValueService.saveGeneralComment(assessmentFacilityId, generalAssessmentComment || null);
       await clearSyncedDraft(assessmentFacilityId);
       setSeedDraft(null);
@@ -525,21 +466,6 @@ export function AssessmentWorkspacePage() {
         />
       </Card>
 
-      <Card
-        title="Source document checklist"
-        subtitle="Confirm source document availability and quality before sending to the manager."
-      >
-        <div className="mb-4 flex items-center gap-2 text-sm text-brand-muted">
-          <FileCheck2 size={16} />
-          {workspace.source_document_requirements.length} required document groups
-        </div>
-        <SourceDocumentChecklist
-          requirements={workspace.source_document_requirements}
-          checks={sourceDocumentChecks}
-          onChange={updateSourceDocumentChecks}
-          disabled={Boolean(readOnly)}
-        />
-      </Card>
       {autoSaveStatus === "ERROR_SAVING_LOCALLY" ? (
         <SyncBanner variant="failed" message="Unable to save draft locally on this device." />
       ) : null}

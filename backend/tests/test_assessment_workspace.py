@@ -452,6 +452,49 @@ def test_manager_can_view_workspace_read_only(
     assert response.json()["workspace_mode"] == "READ_ONLY"
 
 
+def test_submit_assessment_does_not_require_source_document_checklist(
+    client,
+    db_session,
+    manager_token,
+    assessor_token,
+    active_facility,
+    active_indicator,
+    seeded_assessor,
+) -> None:
+    assessment_facility_id = _create_published_assignment(
+        client,
+        manager_token,
+        str(active_facility.id),
+        str(active_indicator.id),
+        str(seeded_assessor.id),
+    )
+    save_response = client.post(
+        f"/api/my-assessments/{assessment_facility_id}/values",
+        headers={"Authorization": f"Bearer {assessor_token}"},
+        json={
+            "values": [
+                {
+                    "indicator_id": str(active_indicator.id),
+                    "register_value": 100,
+                    "hmis105_value": 98,
+                    "assessor_comment": "",
+                }
+            ]
+        },
+    )
+    assert save_response.status_code == 200
+
+    response = client.post(
+        f"/api/my-assessments/{assessment_facility_id}/submit",
+        headers={"Authorization": f"Bearer {assessor_token}"},
+    )
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    saved_value = db_session.query(DqaValue).filter_by(assessment_facility_id=assessment_facility_id).one()
+    assert saved_value.assessment_facility.status == AssessmentFacilityStatus.SUBMITTED
+
+
 def test_submit_assessment_updates_status(
     client,
     db_session,

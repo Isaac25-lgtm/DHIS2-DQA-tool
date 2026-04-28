@@ -426,30 +426,6 @@ def submit_assessment(db: Session, assessment_facility: AssessmentFacility, curr
             ),
         )
 
-    required_documents = {
-        item.name.lower(): item
-        for item in assessment_facility.assessment_round.source_document_requirements
-        if item.is_required
-    }
-    checks_by_name = {
-        item.source_document_name.lower(): item
-        for item in assessment_facility.source_document_checks
-    }
-    incomplete_documents = []
-    for document_name, requirement in required_documents.items():
-        check = checks_by_name.get(document_name)
-        if not check or None in (check.available, check.complete, check.legible, check.missing_pages):
-            incomplete_documents.append(requirement.name)
-
-    if incomplete_documents:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Complete all required source document checks before submission. "
-                f"Missing: {', '.join(incomplete_documents[:5])}"
-            ),
-        )
-
     now = datetime.now(UTC)
     assessment_facility.status = AssessmentFacilityStatus.SUBMITTED
     assessment_facility.submitted_at = now

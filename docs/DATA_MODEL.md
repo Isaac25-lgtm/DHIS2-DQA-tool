@@ -54,7 +54,7 @@ Key fields:
 
 ### `facilities`
 
-Purpose: local registry of assessable facilities imported from DHIS2 or manually entered as a fallback.
+Purpose: local registry of assessable facilities imported from DHIS2. Assessment facilities must originate from DHIS2 so DHIS2 values can be pulled reliably during fieldwork.
 
 Key fields:
 

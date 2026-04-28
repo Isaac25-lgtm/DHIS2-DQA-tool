@@ -3,35 +3,15 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
-import { Select } from "../components/ui/Select";
-import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../hooks/useAuth";
 import { dhis2Service } from "../services/dhis2Service";
 import { facilityService } from "../services/facilityService";
-import type { Dhis2FacilitySearchResult, FacilityFormPayload } from "../types";
-
-const facilityTypes = ["Hospital", "HC IV", "HC III", "HC II", "Other"];
-const ownershipTypes = ["PNFP", "Government", "Private", "Other"];
-
-const emptyForm: FacilityFormPayload = {
-  facility_name: "",
-  district: "",
-  facility_type: "Hospital",
-  ownership: "PNFP",
-  dhis2_org_unit_uid: "",
-  dhis2_code: "",
-  dhis2_path: "",
-  dhis2_parent_name: "",
-  dhis2_level: null,
-  notes: "",
-  is_active: true,
-};
+import type { Dhis2FacilitySearchResult } from "../types";
 
 export function FacilitiesPage() {
   const { user } = useAuth();
   const canManage = user?.role === "MANAGER";
 
-  const [form, setForm] = useState<FacilityFormPayload>(emptyForm);
   const [dhis2Search, setDhis2Search] = useState("");
   const [dhis2Results, setDhis2Results] = useState<Dhis2FacilitySearchResult[]>([]);
   const [dhis2Searching, setDhis2Searching] = useState(false);
@@ -59,31 +39,6 @@ export function FacilitiesPage() {
     }, 400);
     return () => window.clearTimeout(timer);
   }, [canManage, dhis2Search]);
-
-  const submitForm = async () => {
-    if (!canManage) {
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      const payload = {
-        ...form,
-        dhis2_org_unit_uid: form.dhis2_org_unit_uid?.trim() || null,
-        dhis2_code: form.dhis2_code?.trim() || null,
-        dhis2_path: form.dhis2_path?.trim() || null,
-        dhis2_parent_name: form.dhis2_parent_name?.trim() || null,
-        notes: form.notes?.trim() || null,
-      };
-      await facilityService.createFacility(payload);
-      setMessage("Facility created successfully.");
-      setForm(emptyForm);
-    } catch {
-      setError("Unable to save the facility. Check for duplicates or invalid values.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const importFacility = async (result: Dhis2FacilitySearchResult) => {
     setSubmitting(true);
@@ -115,7 +70,10 @@ export function FacilitiesPage() {
 
   return (
     <div className="space-y-6">
-      <Card title="Search facilities in DHIS2" subtitle="Import facilities from the DHIS2 facility registry for UCMB assessments.">
+      <Card
+        title="Search facilities in DHIS2"
+        subtitle="Import facilities from the DHIS2 facility registry for UCMB assessments. Managers can preload facilities before fieldwork so network issues do not block assessment setup later."
+      >
         <div className="space-y-4">
           <Input
             placeholder="Search DHIS2 by facility name, district, code, or UID"
@@ -173,70 +131,6 @@ export function FacilitiesPage() {
             ) : null}
           </div>
         </div>
-      </Card>
-
-      <Card
-        title="Manual fallback"
-        subtitle="Use manual entry only when a facility cannot be found in DHIS2."
-      >
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">Facility name</label>
-              <Input
-                value={form.facility_name}
-                onChange={(event) => setForm({ ...form, facility_name: event.target.value })}
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">District</label>
-              <Input value={form.district} onChange={(event) => setForm({ ...form, district: event.target.value })} />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Facility type</label>
-                <Select
-                  value={form.facility_type}
-                  onChange={(event) => setForm({ ...form, facility_type: event.target.value })}
-                >
-                  {facilityTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Ownership</label>
-                <Select
-                  value={form.ownership}
-                  onChange={(event) => setForm({ ...form, ownership: event.target.value })}
-                >
-                  {ownershipTypes.map((ownership) => (
-                    <option key={ownership} value={ownership}>
-                      {ownership}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">DHIS2 org unit UID</label>
-              <Input
-                value={form.dhis2_org_unit_uid ?? ""}
-                onChange={(event) => setForm({ ...form, dhis2_org_unit_uid: event.target.value })}
-                placeholder="Optional for now, but required later for DHIS2 pulls"
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">Notes</label>
-              <Textarea value={form.notes ?? ""} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={submitForm} disabled={submitting}>
-                {submitting ? "Saving..." : "Create facility"}
-              </Button>
-            </div>
-          </div>
       </Card>
     </div>
   );
