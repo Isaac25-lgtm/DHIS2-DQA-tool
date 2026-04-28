@@ -27,6 +27,15 @@ def test_manager_can_create_assessment_round(client, manager_token) -> None:
     assert payload["name"] == "March 2026 Round"
     assert payload["status"] == "DRAFT"
     assert payload["reporting_period"] == "2026-03"
+    assert payload["assessment_code"].startswith("UCMB-DQA-2026-03-")
+
+
+def test_assessment_round_codes_are_unique_per_round(client, manager_token) -> None:
+    first = _create_round(client, manager_token)
+    second = _create_round(client, manager_token)
+
+    assert first["reporting_period"] == second["reporting_period"]
+    assert first["assessment_code"] != second["assessment_code"]
 
 
 def test_manager_can_delete_assessment_round(client, manager_token) -> None:

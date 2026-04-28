@@ -146,6 +146,7 @@ class AssessmentRoundResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    assessment_code: str
     name: str
     description: str | None
     reporting_period: str
@@ -172,6 +173,7 @@ class AssessmentRoundResponse(BaseModel):
 
 class AssessmentRoundListItem(BaseModel):
     id: UUID
+    assessment_code: str
     name: str
     description: str | None
     reporting_period: str
@@ -190,6 +192,7 @@ class AssessmentRoundListItem(BaseModel):
 
 class AssessmentRoundPackageSummary(BaseModel):
     id: UUID
+    assessment_code: str
     name: str
     description: str | None
     reporting_period: str

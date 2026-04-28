@@ -226,7 +226,7 @@ export function SubmissionsPage() {
           <option value="">All assessment rounds</option>
           {rounds.map((round) => (
             <option key={round.id} value={round.id}>
-              {round.name} - {round.reporting_period} - {round.status}
+              {round.assessment_code} - {round.name} - {round.reporting_period} - {round.status}
             </option>
           ))}
         </select>

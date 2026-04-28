@@ -507,6 +507,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
       >
         <div className="flex flex-wrap items-center gap-3">
           <Badge tone="info">{round ? round.status : "DRAFT"}</Badge>
+          <Badge tone="success">{round ? round.assessment_code : "Assessment number assigned after save"}</Badge>
           <Badge tone="neutral">{round ? round.reporting_period : "Not saved yet"}</Badge>
           {round?.start_date && round?.end_date ? (
             <Badge tone="info">

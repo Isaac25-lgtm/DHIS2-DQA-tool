@@ -73,6 +73,7 @@ export function AssessmentRoundsPage() {
         cell: ({ row }) => (
           <div>
             <p className="font-semibold text-brand-text">{row.original.name}</p>
+            <p className="mt-1 text-xs font-semibold text-brand-teal">{row.original.assessment_code}</p>
             <p className="mt-1 text-xs text-brand-muted">{row.original.description ?? "No description"}</p>
           </div>
         ),

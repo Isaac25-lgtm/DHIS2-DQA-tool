@@ -362,6 +362,7 @@ def build_assessment_workspace_response(
         assessment_facility=serialize_assessment_facility(assessment_facility),
         assessment_round=AssessmentRoundPackageSummary(
             id=assessment_facility.assessment_round.id,
+            assessment_code=assessment_facility.assessment_round.assessment_code,
             name=assessment_facility.assessment_round.name,
             description=assessment_facility.assessment_round.description,
             reporting_period=assessment_facility.assessment_round.reporting_period,

@@ -78,7 +78,7 @@ export function ReportGeneratorPage() {
         )}
         {selectedRound ? (
           <div className="mt-4 rounded-2xl border border-brand-border bg-white px-4 py-4 text-sm text-brand-muted">
-            Generating against <span className="font-semibold text-brand-text">{selectedRound.name}</span> ({selectedRound.reporting_period}).
+            Generating against <span className="font-semibold text-brand-text">{selectedRound.assessment_code}</span> - {selectedRound.name} ({selectedRound.reporting_period}).
           </div>
         ) : null}
       </Card>

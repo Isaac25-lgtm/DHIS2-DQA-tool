@@ -226,6 +226,7 @@ export interface AssessmentFacilityAssignment {
 
 export interface AssessmentRound {
   id: string;
+  assessment_code: string;
   name: string;
   description: string | null;
   reporting_period: string;
@@ -252,6 +253,7 @@ export interface AssessmentRound {
 
 export interface AssessmentRoundPackageSummary {
   id: string;
+  assessment_code: string;
   name: string;
   description: string | null;
   reporting_period: string;
@@ -267,6 +269,7 @@ export interface AssessmentRoundPackageSummary {
 
 export interface AssessmentRoundListItem {
   id: string;
+  assessment_code: string;
   name: string;
   description: string | null;
   reporting_period: string;

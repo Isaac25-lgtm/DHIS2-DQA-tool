@@ -27,6 +27,7 @@ export function AssessmentSummaryCard({
       className="border-brand-border/70"
     >
       <div className="flex flex-wrap gap-2">
+        <Badge tone="success">{workspace.assessment_round.assessment_code}</Badge>
         <Badge tone="info">{workspace.facility.facility_name}</Badge>
         <Badge tone="neutral">{workspace.assessment_round.reporting_period}</Badge>
         <Badge tone={workspace.workspace_mode === "EDIT" ? "success" : "warning"}>

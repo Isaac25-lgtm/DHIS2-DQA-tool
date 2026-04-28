@@ -191,6 +191,7 @@ def get_assessment_package_for_assessor(
     return AssessmentRoundPackageResponse(
         assessment_round=AssessmentRoundPackageSummary(
             id=assessment_round.id,
+            assessment_code=assessment_round.assessment_code,
             name=assessment_round.name,
             description=assessment_round.description,
             reporting_period=assessment_round.reporting_period,

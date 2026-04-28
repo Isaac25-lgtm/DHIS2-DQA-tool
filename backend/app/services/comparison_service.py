@@ -286,6 +286,7 @@ def get_comparison_results_for_assessment_facility(
         facility=FacilityRead.model_validate(assessment_facility.facility),
         assessment_round=AssessmentRoundPackageSummary(
             id=assessment_facility.assessment_round.id,
+            assessment_code=assessment_facility.assessment_round.assessment_code,
             name=assessment_facility.assessment_round.name,
             description=assessment_facility.assessment_round.description,
             reporting_period=assessment_facility.assessment_round.reporting_period,

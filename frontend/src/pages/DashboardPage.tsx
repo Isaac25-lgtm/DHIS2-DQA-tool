@@ -165,7 +165,7 @@ export function DashboardPage() {
               {rounds.length === 0 ? <option value="">No assessments yet</option> : null}
               {rounds.map((round) => (
                 <option key={round.id} value={round.id}>
-                  {round.name} - {round.reporting_period}
+                  {round.assessment_code} - {round.name} - {round.reporting_period}
                 </option>
               ))}
             </select>

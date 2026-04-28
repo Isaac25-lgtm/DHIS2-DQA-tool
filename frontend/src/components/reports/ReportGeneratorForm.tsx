@@ -29,7 +29,11 @@ export function ReportGeneratorForm({
 }) {
   const facilityRequired = value.report_type === "FACILITY_DQA_REPORT";
   const roundOptions = useMemo(
-    () => rounds.map((round) => ({ label: `${round.name} (${round.reporting_period})`, value: round.id })),
+    () =>
+      rounds.map((round) => ({
+        label: `${round.assessment_code} - ${round.name} (${round.reporting_period})`,
+        value: round.id,
+      })),
     [rounds],
   );
   const facilityOptions = useMemo(

@@ -22,10 +22,12 @@ class AssessmentRound(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "assessment_rounds"
     __table_args__ = (
         Index("ix_assessment_rounds_status", "status"),
+        Index("ix_assessment_rounds_assessment_code", "assessment_code", unique=True),
         Index("ix_assessment_rounds_reporting_period", "reporting_period"),
         Index("ix_assessment_rounds_created_by_user_id", "created_by_user_id"),
     )
 
+    assessment_code: Mapped[str] = mapped_column(String(80), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     reporting_period: Mapped[str] = mapped_column(String(50), nullable=False)

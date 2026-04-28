@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
+import re
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -57,6 +58,25 @@ DEFAULT_SCORING_SETTINGS = {
 }
 
 
+def _period_code_fragment(reporting_period: str) -> str:
+    value = re.sub(r"[^0-9A-Za-z]+", "-", reporting_period.strip().upper()).strip("-")
+    return value or "PERIOD"
+
+
+def _next_assessment_code(db: Session, reporting_period: str) -> str:
+    prefix = f"UCMB-DQA-{_period_code_fragment(reporting_period)}"
+    existing_count = db.scalar(
+        select(func.count()).select_from(AssessmentRound).where(AssessmentRound.reporting_period == reporting_period)
+    ) or 0
+    sequence = int(existing_count) + 1
+    while True:
+        candidate = f"{prefix}-{sequence:03d}"
+        exists = db.scalar(select(AssessmentRound.id).where(AssessmentRound.assessment_code == candidate))
+        if not exists:
+            return candidate
+        sequence += 1
+
+
 def _editable_round_or_404(db: Session, round_id: uuid.UUID) -> AssessmentRound:
     assessment_round = get_round_by_id(db, round_id)
     if not assessment_round:
@@ -98,10 +118,12 @@ def _build_source_documents(
 
 
 def create_assessment_round(db: Session, payload: AssessmentRoundCreate, created_by_user_id: uuid.UUID) -> AssessmentRound:
+    reporting_period = payload.reporting_period.strip()
     assessment_round = AssessmentRound(
+        assessment_code=_next_assessment_code(db, reporting_period),
         name=payload.name.strip(),
         description=payload.description,
-        reporting_period=payload.reporting_period.strip(),
+        reporting_period=reporting_period,
         period_type=payload.period_type,
         start_date=payload.start_date,
         end_date=payload.end_date,
@@ -472,6 +494,7 @@ def serialize_round_response(assessment_round: AssessmentRound) -> AssessmentRou
     )
     return AssessmentRoundResponse(
         id=assessment_round.id,
+        assessment_code=assessment_round.assessment_code,
         name=assessment_round.name,
         description=assessment_round.description,
         reporting_period=assessment_round.reporting_period,
@@ -511,6 +534,7 @@ def serialize_round_list_item(db: Session, assessment_round: AssessmentRound) ->
     )
     return AssessmentRoundListItem(
         id=detailed_round.id,
+        assessment_code=detailed_round.assessment_code,
         name=detailed_round.name,
         description=detailed_round.description,
         reporting_period=detailed_round.reporting_period,
