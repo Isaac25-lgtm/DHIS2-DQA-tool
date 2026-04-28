@@ -203,11 +203,15 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   );
 
   const filteredIndicators = useMemo(() => {
+    const searchText = indicatorSearch.trim().toLowerCase();
+    if (searchText.length < 2) {
+      return [];
+    }
     return availableIndicators.filter((item) => {
       const matchesSearch = [item.indicator_name, item.hmis_code, item.dhis2_uid_or_operand ?? "", item.source_register ?? ""]
         .join(" ")
         .toLowerCase()
-        .includes(indicatorSearch.trim().toLowerCase());
+        .includes(searchText);
       const matchesGroup = indicatorGroupFilter === "ALL" || item.indicator_group === indicatorGroupFilter;
       const matchesSection = indicatorSectionFilter === "ALL" || item.hmis_section === indicatorSectionFilter;
       return matchesSearch && matchesGroup && matchesSection;
@@ -628,9 +632,9 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
 
       {activeStep === 1 ? (
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card title="Step 2: Select indicators" subtitle="Choose only imported or confirmed mapped DHIS2 HMIS 105 data elements.">
+          <Card title="Step 2: Select indicators" subtitle="Search for imported DHIS2 HMIS 105 data elements, then add only the indicators needed for this assessment project.">
             <div className="grid gap-3 md:grid-cols-3">
-              <Input placeholder="Search indicators" value={indicatorSearch} onChange={(event) => setIndicatorSearch(event.target.value)} />
+              <Input placeholder="Search by HMIS code, data element name, or DHIS2 UID" value={indicatorSearch} onChange={(event) => setIndicatorSearch(event.target.value)} />
               <Select value={indicatorGroupFilter} onChange={(event) => setIndicatorGroupFilter(event.target.value)}>
                 {indicatorGroups.map((group) => (
                   <option key={group} value={group}>
@@ -648,7 +652,11 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
             </div>
 
             <div className="mt-4 space-y-3">
-              {filteredIndicators.length === 0 ? (
+              {indicatorSearch.trim().length < 2 ? (
+                <div className="rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
+                  Start typing at least 2 characters to search imported DHIS2-backed HMIS 105 data elements. The full indicator library is hidden here to keep assessment setup focused.
+                </div>
+              ) : filteredIndicators.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
                   No DHIS2-backed data elements match this search. Import HMIS 105 data elements from DHIS2 first.
                   <div className="mt-3">
