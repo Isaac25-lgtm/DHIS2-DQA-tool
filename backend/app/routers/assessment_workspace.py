@@ -219,6 +219,9 @@ def submit_assessment_endpoint(
 ) -> SubmitAssessmentResponse:
     assessment_facility = get_assessment_facility_for_workspace(db, assessment_facility_id)
     assessment_facility = submit_assessment(db, assessment_facility, current_user)
+    from app.services.comparison_service import run_comparison_for_assessment_facility
+
+    run_comparison_for_assessment_facility(db, assessment_facility_id, current_user)
     log_audit_event(
         db,
         actor_user_id=current_user.id,

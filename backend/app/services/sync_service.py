@@ -93,6 +93,9 @@ def sync_assessment_draft(
 
         if payload.submit_final:
             submit_assessment(db, assessment_facility, current_user)
+            from app.services.comparison_service import run_comparison_for_assessment_facility
+
+            run_comparison_for_assessment_facility(db, assessment_facility.id, current_user)
 
         synced_at = datetime.now(UTC)
         sync_log.status = "SYNCED"

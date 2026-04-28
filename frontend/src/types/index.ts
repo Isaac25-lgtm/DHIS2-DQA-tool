@@ -480,6 +480,74 @@ export interface AnalyticsSummary {
   overdue_corrective_actions: number;
 }
 
+export interface SubmissionStats {
+  total_facilities: number;
+  submitted_facilities: number;
+  pending_facilities: number;
+  in_progress_facilities: number;
+  not_started_facilities: number;
+  completion_percent: number;
+  remaining_percent: number;
+  total_submitted_rows: number;
+  exact_count: number;
+  within_threshold_count: number;
+  flagged_count: number;
+  critical_count: number;
+  missing_count: number;
+  average_score_percent: number;
+}
+
+export interface SubmissionListItem {
+  assessment_facility_id: string;
+  assessment_round_id: string;
+  assessment_round_name: string;
+  reporting_period: string;
+  facility_id: string;
+  facility_name: string;
+  district: string;
+  status: AssessmentFacilityStatus;
+  team_lead: string | null;
+  team_members: string[];
+  submitted_at: string | null;
+  last_synced_at: string | null;
+  completed_indicators: number;
+  total_indicators: number;
+  flagged_rows: number;
+  critical_rows: number;
+  dqa_score: number;
+  score_category: string;
+  general_assessment_comment: string | null;
+}
+
+export interface SubmissionValueRow {
+  dqa_value_id: string | null;
+  indicator_id: string;
+  indicator_name: string;
+  hmis_code: string;
+  source_register: string | null;
+  register_value: number | null;
+  hmis105_value: number | null;
+  dhis2_value_at_assessment: number | null;
+  register_vs_hmis_difference: number | null;
+  hmis_vs_dhis2_difference: number | null;
+  register_vs_dhis2_difference: number | null;
+  discrepancy_percent: number | null;
+  issue_type: string | null;
+  severity: string | null;
+  flag: string;
+  comparison_notes: string | null;
+}
+
+export interface SubmissionDetail {
+  summary: SubmissionListItem;
+  values: SubmissionValueRow[];
+}
+
+export interface SubmissionDashboard {
+  stats: SubmissionStats;
+  submissions: SubmissionListItem[];
+}
+
 export interface FacilityAnalyticsItem {
   assessment_facility_id: string;
   facility_id: string;

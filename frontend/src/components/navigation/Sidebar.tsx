@@ -3,12 +3,12 @@ import {
   Building2,
   ClipboardList,
   ClipboardX,
+  ClipboardCheck,
   FileSpreadsheet,
   Gauge,
   Layers3,
   PackageCheck,
   Settings,
-  Users,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
@@ -25,12 +25,12 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge, roles: ["MANAGER", "ASSESSOR", "REVIEWER", "VIEWER"] },
-  { to: "/users", label: "Users", icon: Users, roles: ["MANAGER"] },
   { to: "/facilities", label: "Facilities", icon: Building2, roles: ["MANAGER"] },
   { to: "/indicators", label: "Indicator Library", icon: Layers3, roles: ["MANAGER"] },
   { to: "/assessment-rounds", label: "Assessments", icon: ClipboardList, roles: ["MANAGER", "REVIEWER"] },
-  { to: "/analytics", label: "Analytics", icon: ActivitySquare, roles: ["MANAGER", "REVIEWER", "VIEWER"] },
-  { to: "/corrective-actions", label: "Corrective Actions", icon: ClipboardX, roles: ["MANAGER", "REVIEWER"] },
+  { to: "/submissions", label: "Submissions", icon: ClipboardCheck, roles: ["MANAGER", "REVIEWER"] },
+  { to: "/analytics", label: "Analytics", icon: ActivitySquare, roles: ["REVIEWER", "VIEWER"] },
+  { to: "/corrective-actions", label: "Corrective Actions", icon: ClipboardX, roles: ["REVIEWER"] },
   { to: "/my-assessments", label: "My Assessments", icon: PackageCheck, roles: ["ASSESSOR"] },
   { to: "/reports", label: "Reports", icon: FileSpreadsheet, roles: ["MANAGER", "REVIEWER"] },
   { to: "/reports", label: "Approved Reports", icon: FileSpreadsheet, roles: ["VIEWER"] },

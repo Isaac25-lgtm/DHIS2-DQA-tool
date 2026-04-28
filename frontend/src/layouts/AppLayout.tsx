@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "../components/navigation/Sidebar";
 import { Topbar } from "../components/navigation/Topbar";
+import { WorkflowGuide } from "../components/navigation/WorkflowGuide";
 import { useAuth } from "../hooks/useAuth";
 
 export function AppLayout({ children }: { children?: ReactNode }) {
@@ -22,7 +23,10 @@ export function AppLayout({ children }: { children?: ReactNode }) {
       <Sidebar />
       <div className="min-w-0 flex-1">
         <Topbar />
-        <main className="page-shell">{children ?? <Outlet />}</main>
+        <main className="page-shell">
+          <WorkflowGuide />
+          {children ?? <Outlet />}
+        </main>
       </div>
     </div>
   );

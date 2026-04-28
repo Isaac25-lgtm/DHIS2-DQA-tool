@@ -18,6 +18,7 @@ const pageTitles: Record<string, string> = {
   "/indicators": "Indicator Library",
   "/assessment-rounds": "Assessment Rounds",
   "/assessment-facilities": "Assessment Workspace Review",
+  "/submissions": "Submissions",
   "/my-assessments": "My Assessments",
   "/analytics": "Analytics",
   "/assessment-results": "Assessment Results",

@@ -20,6 +20,7 @@ import { ReportDetailPage } from "../pages/ReportDetailPage";
 import { ReportGeneratorPage } from "../pages/ReportGeneratorPage";
 import { ReportsPage } from "../pages/ReportsPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { SubmissionsPage } from "../pages/SubmissionsPage";
 import { UserManagementPage } from "../pages/UserManagementPage";
 import type { UserRole } from "../types";
 
@@ -75,6 +76,7 @@ export function AppRoutes() {
           <Route path="/assessment-rounds" element={<AssessmentRoundsPage />} />
           <Route path="/assessment-rounds/:id" element={<AssessmentRoundDetailPage />} />
           <Route path="/assessment-facilities/:assessmentFacilityId/workspace" element={<AssessmentWorkspacePage />} />
+          <Route path="/submissions" element={<SubmissionsPage />} />
         </Route>
         <Route element={<RoleRoute allowedRoles={["MANAGER"]} />}>
           <Route path="/assessment-rounds/new" element={<AssessmentRoundBuilderPage />} />

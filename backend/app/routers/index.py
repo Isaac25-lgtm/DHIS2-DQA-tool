@@ -14,6 +14,7 @@ from app.routers.facilities import router as facilities_router
 from app.routers.health import router as health_router
 from app.routers.indicators import router as indicators_router
 from app.routers.reports import router as reports_router
+from app.routers.submissions import router as submissions_router
 from app.routers.sync import router as sync_router
 from app.routers.system import router as system_router
 from app.routers.users import router as users_router
@@ -34,5 +35,6 @@ api_router.include_router(users_router)
 api_router.include_router(facilities_router)
 api_router.include_router(indicators_router)
 api_router.include_router(reports_router)
+api_router.include_router(submissions_router)
 api_router.include_router(system_router)
 api_router.include_router(health_router)

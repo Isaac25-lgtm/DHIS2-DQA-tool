@@ -9,4 +9,5 @@ export { facilityService } from "./facilityService";
 export { indicatorService } from "./indicatorService";
 export * from "./offlineStore";
 export { syncService } from "./syncService";
+export { submissionService } from "./submissionService";
 export { userService } from "./userService";

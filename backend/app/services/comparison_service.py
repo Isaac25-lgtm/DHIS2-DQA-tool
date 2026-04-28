@@ -34,6 +34,10 @@ def _ensure_can_run_comparison(assessment_facility: AssessmentFacility, current_
         return
     if current_user.role == UserRole.ASSESSOR and assessment_facility.assigned_assessor_id == current_user.id:
         return
+    if current_user.role == UserRole.ASSESSOR and any(
+        member.user_id == current_user.id and member.is_active for member in assessment_facility.team_members
+    ):
+        return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot run comparison for this assessment.")
 
 
@@ -41,6 +45,10 @@ def _ensure_can_view_comparison(assessment_facility: AssessmentFacility, current
     if current_user.role in {UserRole.MANAGER, UserRole.REVIEWER}:
         return
     if current_user.role == UserRole.ASSESSOR and assessment_facility.assigned_assessor_id == current_user.id:
+        return
+    if current_user.role == UserRole.ASSESSOR and any(
+        member.user_id == current_user.id and member.is_active for member in assessment_facility.team_members
+    ):
         return
     if current_user.role == UserRole.VIEWER:
         return
