@@ -13,7 +13,7 @@ import { Button } from "../ui/Button";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Operational Data Quality Dashboard",
-  "/users": "User Management",
+  "/users": "Users / Team Accounts",
   "/facilities": "Facilities",
   "/indicators": "Indicator Library",
   "/assessment-rounds": "Assessment Rounds",

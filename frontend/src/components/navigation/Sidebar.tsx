@@ -9,6 +9,7 @@ import {
   Layers3,
   PackageCheck,
   Settings,
+  UsersRound,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
@@ -25,6 +26,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge, roles: ["MANAGER", "ASSESSOR", "REVIEWER", "VIEWER"] },
+  { to: "/users", label: "Users / Teams", icon: UsersRound, roles: ["MANAGER"] },
   { to: "/facilities", label: "Facilities", icon: Building2, roles: ["MANAGER"] },
   { to: "/indicators", label: "Indicator Library", icon: Layers3, roles: ["MANAGER"] },
   { to: "/assessment-rounds", label: "Assessments", icon: ClipboardList, roles: ["MANAGER", "REVIEWER"] },
