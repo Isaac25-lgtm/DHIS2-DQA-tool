@@ -1,0 +1,23 @@
+
+> ucmb-dqa-platform-frontend@0.6.0 dev
+> vite --host 127.0.0.1 --port 5173
+
+
+  [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m3337[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5173[22m/[39m
+[2m11:38:09[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2msrc/types/index.ts[22m
+[2m11:38:23[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/AssessmentWorkspacePage.tsx[22m
+[2m11:38:33[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/FacilitiesPage.tsx, /src/pages/DashboardPage.tsx, /src/components/assessment/AssessmentRoundEditor.tsx[22m
+[2m11:38:44[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/IndicatorLibraryPage.tsx, /src/pages/DashboardPage.tsx, /src/components/assessment/AssessmentRoundEditor.tsx[22m
+[2m11:38:49[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/IndicatorLibraryPage.tsx, /src/pages/DashboardPage.tsx, /src/components/assessment/AssessmentRoundEditor.tsx[22m
+[2m11:39:17[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/MyAssessmentsPage.tsx, /src/pages/DashboardPage.tsx, /src/components/assessment/AssessmentRoundEditor.tsx[22m
+[2m11:39:52[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/FacilitiesPage.tsx, /src/index.css[22m
+[2m11:40:29[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/IndicatorLibraryPage.tsx, /src/index.css[22m
+[2m11:40:57[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/SettingsPage.tsx, /src/index.css[22m
+[2m11:41:38[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/assessment/AssessmentRoundEditor.tsx, /src/index.css[22m
+[2m11:41:58[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/assessment/AssessmentSummaryCard.tsx, /src/index.css[22m
+[2m11:42:08[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/AssessmentWorkspacePage.tsx, /src/index.css[22m
+[2m11:42:20[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/MyAssessmentsPage.tsx, /src/index.css[22m
+[2m11:44:57[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/IndicatorLibraryPage.tsx, /src/pages/DashboardPage.tsx, /src/components/assessment/AssessmentRoundEditor.tsx[22m
+[2m11:50:13[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/index.css, /src/pages/IndicatorLibraryPage.tsx, /src/pages/DashboardPage.tsx, /src/components/assessment/AssessmentRoundEditor.tsx[22m

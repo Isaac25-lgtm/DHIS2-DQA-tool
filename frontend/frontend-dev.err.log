@@ -1,0 +1,10 @@
+[2m11:38:44[22m [33m[1m[vite][22m[39m [33mwarning: [33mDuplicate key "indicator_group" in object literal[33m
+27 |        value_type: payload.value_type ?? "INTEGER_ZERO_OR_POSITIVE",
+28 |        aggregation_type: payload.aggregation_type ?? null,
+29 |        indicator_group: payload.indicator_group ?? "Other",
+   |        ^
+30 |        is_active: true,
+31 |        is_required_by_default: true,
+[39m
+  Plugin: [35mvite:esbuild[39m
+  File: [36mF:/MY FILES/DATA SCIENCE/UCMB DQA/ucmb-dqa-platform/frontend/src/services/indicatorService.ts[39m
