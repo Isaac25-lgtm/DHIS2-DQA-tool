@@ -7,11 +7,10 @@ import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { Select } from "../components/ui/Select";
 import { Table } from "../components/ui/Table";
-import { Textarea } from "../components/ui/Textarea";
 import { useAuth } from "../hooks/useAuth";
 import { dhis2Service } from "../services/dhis2Service";
 import { indicatorService } from "../services/indicatorService";
-import type { Dhis2DataElementSearchResult, Indicator, IndicatorFilters, IndicatorFormPayload } from "../types";
+import type { Dhis2DataElementSearchResult, Indicator, IndicatorFilters } from "../types";
 
 const groupOptions = [
   "Maternity",
@@ -23,25 +22,6 @@ const groupOptions = [
   "Uterotonics / PPH",
 ];
 
-const emptyForm: IndicatorFormPayload = {
-  indicator_name: "",
-  indicator_group: "Maternity",
-  hmis_code: "",
-  dhis2_uid_or_operand: "",
-  dataset_name: "",
-  hmis_section: "",
-  source_register: "",
-  category_combo: "",
-  value_type: "integer",
-  aggregation_type: null,
-  is_active: true,
-  is_required_by_default: true,
-  default_discrepancy_threshold_percent: 5,
-  is_death_indicator: false,
-  sort_order: 0,
-  notes: "",
-};
-
 export function IndicatorLibraryPage() {
   const { user } = useAuth();
   const canManage = user?.role === "MANAGER";
@@ -52,8 +32,6 @@ export function IndicatorLibraryPage() {
   const [dhis2Search, setDhis2Search] = useState("");
   const [dhis2Results, setDhis2Results] = useState<Dhis2DataElementSearchResult[]>([]);
   const [dhis2Searching, setDhis2Searching] = useState(false);
-  const [form, setForm] = useState<IndicatorFormPayload>(emptyForm);
-  const [editingIndicatorId, setEditingIndicatorId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -197,34 +175,6 @@ export function IndicatorLibraryPage() {
         cell: ({ row }) =>
           canManage ? (
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                className="px-3 py-2 text-xs"
-                onClick={() => {
-                  setEditingIndicatorId(row.original.id);
-                  setForm({
-                    indicator_name: row.original.indicator_name,
-                    indicator_group: row.original.indicator_group,
-                    hmis_code: row.original.hmis_code,
-                    dhis2_uid_or_operand: row.original.dhis2_uid_or_operand ?? "",
-                    dataset_name: row.original.dataset_name ?? "",
-                    hmis_section: row.original.hmis_section ?? "",
-                    source_register: row.original.source_register ?? "",
-                    category_combo: row.original.category_combo ?? "",
-                    value_type: row.original.value_type,
-                    aggregation_type: row.original.aggregation_type,
-                    is_active: row.original.is_active,
-                    is_required_by_default: row.original.is_required_by_default,
-                    default_discrepancy_threshold_percent:
-                      row.original.default_discrepancy_threshold_percent,
-                    is_death_indicator: row.original.is_death_indicator,
-                    sort_order: row.original.sort_order,
-                    notes: row.original.notes ?? "",
-                  });
-                }}
-              >
-                Edit
-              </Button>
               {row.original.is_active ? (
                 <Button
                   variant="ghost"
@@ -267,40 +217,6 @@ export function IndicatorLibraryPage() {
     [canManage, loadIndicators],
   );
 
-  const submitForm = async () => {
-    if (!canManage) {
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      const payload = {
-        ...form,
-        dhis2_uid_or_operand: form.dhis2_uid_or_operand?.trim() || null,
-        dataset_name: form.dataset_name?.trim() || null,
-        hmis_section: form.hmis_section?.trim() || null,
-        source_register: form.source_register?.trim() || null,
-        category_combo: form.category_combo?.trim() || null,
-        aggregation_type: form.aggregation_type?.trim() || null,
-        notes: form.notes?.trim() || null,
-      };
-      if (editingIndicatorId) {
-        await indicatorService.updateIndicator(editingIndicatorId, payload);
-        setMessage("Indicator updated successfully.");
-      } else {
-        await indicatorService.createIndicator(payload);
-        setMessage("Indicator created successfully.");
-      }
-      setEditingIndicatorId(null);
-      setForm(emptyForm);
-      await loadIndicators();
-    } catch {
-      setError("Unable to save the indicator. Check for duplicate DHIS2 identifiers or invalid values.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const seedConfirmed = async () => {
     setSeeding(true);
     setError(null);
@@ -326,11 +242,10 @@ export function IndicatorLibraryPage() {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
-      <div className="space-y-6">
+    <div className="space-y-6">
         <Card
           title="Indicator Library"
-          subtitle="Search, import, and manage HMIS 105 data elements for assessment rounds."
+          subtitle="Search and import HMIS 105 data elements from DHIS2 for assessment rounds."
         >
           <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
             <Input
@@ -431,128 +346,6 @@ export function IndicatorLibraryPage() {
             <Table data={indicators} columns={columns} emptyMessage="No indicators found yet." />
           )}
         </Card>
-      </div>
-
-      <Card
-        title={editingIndicatorId ? "Edit Indicator" : "Manual fallback"}
-        subtitle="Use manual entry only when a data element cannot be imported from DHIS2."
-      >
-        {!canManage ? (
-          <p className="text-sm text-brand-muted">Indicator editing and seeding are manager-only actions.</p>
-        ) : (
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">Indicator name</label>
-              <Input
-                value={form.indicator_name}
-                onChange={(event) => setForm({ ...form, indicator_name: event.target.value })}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Group</label>
-                <Select
-                  value={form.indicator_group}
-                  onChange={(event) => setForm({ ...form, indicator_group: event.target.value })}
-                >
-                  {groupOptions.map((group) => (
-                    <option key={group} value={group}>
-                      {group}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">HMIS code</label>
-                <Input value={form.hmis_code} onChange={(event) => setForm({ ...form, hmis_code: event.target.value })} />
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">DHIS2 UID or operand</label>
-              <Input
-                value={form.dhis2_uid_or_operand ?? ""}
-                onChange={(event) => setForm({ ...form, dhis2_uid_or_operand: event.target.value })}
-                placeholder="Example: idXOxt69W0e or RYcEItpNCUp.Ck8FveDhZSy"
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Dataset</label>
-                <Input
-                  value={form.dataset_name ?? ""}
-                  onChange={(event) => setForm({ ...form, dataset_name: event.target.value })}
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">HMIS section</label>
-                <Input
-                  value={form.hmis_section ?? ""}
-                  onChange={(event) => setForm({ ...form, hmis_section: event.target.value })}
-                />
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Source register</label>
-                <Input
-                  value={form.source_register ?? ""}
-                  onChange={(event) => setForm({ ...form, source_register: event.target.value })}
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Category combo</label>
-                <Input
-                  value={form.category_combo ?? ""}
-                  onChange={(event) => setForm({ ...form, category_combo: event.target.value })}
-                />
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Threshold %</label>
-                <Input
-                  type="number"
-                  value={form.default_discrepancy_threshold_percent}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      default_discrepancy_threshold_percent: Number(event.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-brand-text">Sort order</label>
-                <Input
-                  type="number"
-                  value={form.sort_order}
-                  onChange={(event) => setForm({ ...form, sort_order: Number(event.target.value) })}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">Notes</label>
-              <Textarea value={form.notes ?? ""} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={submitForm} disabled={submitting}>
-                {submitting ? "Saving..." : editingIndicatorId ? "Update indicator" : "Create indicator"}
-              </Button>
-              {editingIndicatorId ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setEditingIndicatorId(null);
-                    setForm(emptyForm);
-                  }}
-                >
-                  Cancel edit
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        )}
-      </Card>
     </div>
   );
 }
