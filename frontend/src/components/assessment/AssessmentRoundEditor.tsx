@@ -105,6 +105,8 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const [allowUnassignedPublish, setAllowUnassignedPublish] = useState(false);
 
   const canEditDraft = isManager && (!round || round.status === "DRAFT");
+  const canEditTeams =
+    isManager && Boolean(round) && round?.status !== "CLOSED" && round?.status !== "ARCHIVED";
 
   const loadSupportData = async () => {
     const [indicators, facilities, users] = await Promise.all([
@@ -843,7 +845,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                   value={assessorForm.full_name}
                   onChange={(event) => setAssessorForm({ ...assessorForm, full_name: event.target.value })}
                   placeholder="Team member name"
-                  disabled={!canEditDraft}
+                  disabled={!canEditTeams}
                 />
               </div>
               <div>
@@ -853,7 +855,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                   value={assessorForm.email}
                   onChange={(event) => setAssessorForm({ ...assessorForm, email: event.target.value })}
                   placeholder="name@example.org"
-                  disabled={!canEditDraft}
+                  disabled={!canEditTeams}
                 />
               </div>
               <div>
@@ -863,16 +865,16 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                   value={assessorForm.password ?? ""}
                   onChange={(event) => setAssessorForm({ ...assessorForm, password: event.target.value })}
                   placeholder="Minimum 8 characters"
-                  disabled={!canEditDraft}
+                  disabled={!canEditTeams}
                 />
               </div>
-              <Button onClick={() => void createAssessorInline()} disabled={!canEditDraft || creatingAssessor}>
+              <Button onClick={() => void createAssessorInline()} disabled={!canEditTeams || creatingAssessor}>
                 {creatingAssessor ? "Adding..." : "Add member"}
               </Button>
             </div>
           </Card>
 
-          <Card title="Step 4: Assign field team" subtitle="Each selected facility needs a Team Lead; Team Members can enter data but cannot submit unless allowed later.">
+          <Card title="Step 4: Assign field team" subtitle="Each selected facility needs a Team Lead. Managers can change teams until the facility assessment is submitted or closed.">
           {selectedFacilityDetails.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
               No facilities selected yet. Go back one step and add facilities first.
@@ -907,7 +909,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                           },
                         }))
                       }
-                      disabled={!canEditDraft}
+                      disabled={!canEditTeams}
                     >
                       <option value="">Select Team Lead</option>
                       {assessors.map((assessor) => (
@@ -929,7 +931,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                disabled={!canEditDraft || currentTeam.leadId === assessor.id}
+                                disabled={!canEditTeams || currentTeam.leadId === assessor.id}
                                 onChange={(event) =>
                                   setTeamAssignments((current) => {
                                     const existing = current[facility.id] ?? { leadId: "", memberIds: [] };
@@ -952,7 +954,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
             </div>
           )}
           <div className="mt-5 flex gap-2">
-            <Button onClick={() => void saveAssignments()} disabled={!canEditDraft || saving || !round}>
+            <Button onClick={() => void saveAssignments()} disabled={!canEditTeams || saving || !round}>
               {saving ? "Saving..." : "Save assignments"}
             </Button>
             <Button variant="secondary" onClick={() => setActiveStep(4)} disabled={!round}>

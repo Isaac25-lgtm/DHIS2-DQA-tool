@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRight, CalendarRange, ClipboardList, PlusCircle } from "lucide-react";
+import { ArrowRight, CalendarRange, ClipboardList, PlusCircle, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -25,23 +25,44 @@ export function AssessmentRoundsPage() {
   const { user } = useAuth();
   const [rounds, setRounds] = useState<AssessmentRoundListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadRounds = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await assessmentRoundService.listRounds();
-        setRounds(data);
-      } catch {
-        setError("Unable to load assessment rounds right now.");
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadRounds = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await assessmentRoundService.listRounds();
+      setRounds(data);
+    } catch {
+      setError("Unable to load assessment rounds right now.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
+  useEffect(() => {
     void loadRounds();
+  }, [loadRounds]);
+
+  const deleteRound = useCallback(async (round: AssessmentRoundListItem) => {
+    const confirmed = window.confirm(
+      `Delete "${round.name}" and all of its assessment assignments? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(round.id);
+    setError(null);
+    try {
+      await assessmentRoundService.deleteRound(round.id);
+      setRounds((current) => current.filter((item) => item.id !== round.id));
+    } catch {
+      setError("Unable to delete this assessment round. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
   }, []);
 
   const columns = useMemo<ColumnDef<AssessmentRoundListItem>[]>(
@@ -104,13 +125,26 @@ export function AssessmentRoundsPage() {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
-          <Link className="text-sm font-semibold text-brand-teal" to={`/assessment-rounds/${row.original.id}`}>
-            View
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link className="text-sm font-semibold text-brand-teal" to={`/assessment-rounds/${row.original.id}`}>
+              View
+            </Link>
+            {user?.role === "MANAGER" ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-sm font-semibold text-brand-danger disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={deletingId === row.original.id}
+                onClick={() => void deleteRound(row.original)}
+              >
+                <Trash2 size={14} />
+                {deletingId === row.original.id ? "Deleting..." : "Delete"}
+              </button>
+            ) : null}
+          </div>
         ),
       },
     ],
-    [],
+    [deleteRound, deletingId, user?.role],
   );
 
   return (

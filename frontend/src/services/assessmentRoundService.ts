@@ -37,6 +37,10 @@ export const assessmentRoundService = {
     return response.data;
   },
 
+  async deleteRound(roundId: string) {
+    await api.delete(`/assessment-rounds/${roundId}`);
+  },
+
   async addIndicators(roundId: string, indicators: SelectedIndicatorPayload[]) {
     const response = await api.post<SelectedIndicator[]>(`/assessment-rounds/${roundId}/indicators`, { indicators });
     return response.data;

@@ -29,6 +29,20 @@ def test_manager_can_create_assessment_round(client, manager_token) -> None:
     assert payload["reporting_period"] == "2026-03"
 
 
+def test_manager_can_delete_assessment_round(client, manager_token) -> None:
+    payload = _create_round(client, manager_token)
+
+    response = client.delete(
+        f"/api/assessment-rounds/{payload['id']}",
+        headers={"Authorization": f"Bearer {manager_token}"},
+    )
+
+    assert response.status_code == 204
+    list_response = client.get("/api/assessment-rounds", headers={"Authorization": f"Bearer {manager_token}"})
+    assert list_response.status_code == 200
+    assert payload["id"] not in {item["id"] for item in list_response.json()}
+
+
 def test_non_manager_cannot_create_assessment_round(client, assessor_token) -> None:
     response = client.post(
         "/api/assessment-rounds",

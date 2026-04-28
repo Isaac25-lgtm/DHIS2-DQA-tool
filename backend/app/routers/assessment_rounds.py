@@ -31,6 +31,7 @@ from app.services.assessment_round_service import (
     archive_assessment_round,
     close_assessment_round,
     create_assessment_round,
+    delete_assessment_round,
     get_round_by_id,
     get_round_progress,
     list_rounds_for_user,
@@ -106,6 +107,33 @@ def get_assessment_round_endpoint(
 ) -> AssessmentRoundResponse:
     assessment_round = _get_round_for_view(db, round_id, current_user)
     return serialize_round_response(assessment_round)
+
+
+@router.delete(
+    "/assessment-rounds/{round_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def delete_assessment_round_endpoint(
+    round_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    current_user: User = Depends(require_roles(UserRole.MANAGER)),
+) -> Response:
+    assessment_round = _get_round_for_view(db, round_id, current_user)
+    round_name = assessment_round.name
+    delete_assessment_round(db, assessment_round)
+    log_audit_event(
+        db,
+        actor_user_id=current_user.id,
+        action="assessment_round_deleted",
+        entity_type="assessment_round",
+        entity_id=round_id,
+        description=f"Deleted assessment round {round_name}.",
+        request=request,
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.put("/assessment-rounds/{round_id}", response_model=AssessmentRoundResponse)

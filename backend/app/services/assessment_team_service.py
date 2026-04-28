@@ -78,13 +78,18 @@ def set_team_members(
     payload: AssessmentTeamAssignmentRequest,
     assigned_by_user_id: uuid.UUID,
 ) -> list[AssessmentFacilityTeamMember]:
-    if assessment_facility.status not in {
+    editable_statuses = {
         AssessmentFacilityStatus.NOT_STARTED,
         AssessmentFacilityStatus.ASSIGNED,
-    }:
+        AssessmentFacilityStatus.IN_PROGRESS,
+        AssessmentFacilityStatus.DRAFT_SAVED,
+        AssessmentFacilityStatus.PENDING_SYNC,
+        AssessmentFacilityStatus.RETURNED_FOR_CORRECTION,
+    }
+    if assessment_facility.status not in editable_statuses:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Assessment teams can only be changed before field work starts.",
+            detail="Assessment teams can only be changed before the facility assessment is submitted or closed.",
         )
 
     user_ids = [item.user_id for item in payload.team_members]

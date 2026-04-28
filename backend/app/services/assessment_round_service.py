@@ -194,6 +194,11 @@ def archive_assessment_round(db: Session, assessment_round: AssessmentRound) -> 
     return assessment_round
 
 
+def delete_assessment_round(db: Session, assessment_round: AssessmentRound) -> None:
+    db.delete(assessment_round)
+    db.flush()
+
+
 def close_assessment_round(db: Session, assessment_round: AssessmentRound) -> AssessmentRound:
     if assessment_round.status == AssessmentRoundStatus.ARCHIVED:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archived rounds cannot be closed.")

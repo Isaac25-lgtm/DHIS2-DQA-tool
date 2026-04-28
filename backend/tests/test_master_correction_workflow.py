@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import UUID
 
-from app.models.base import AssessmentTeamRole
+from app.models.assessment_facility import AssessmentFacility
+from app.models.base import AssessmentFacilityStatus, AssessmentTeamRole
 from app.schemas.dhis2 import Dhis2ConnectionStatus
 from app.schemas.facility import Dhis2FacilitySearchResult
 from app.schemas.indicator import Dhis2DataElementSearchResult
@@ -337,6 +339,71 @@ def test_team_lead_and_members_permissions(client, manager_token, active_facilit
         headers={"Authorization": f"Bearer {assessor_token}"},
     )
     assert lead_submit.status_code == 200
+
+
+def test_manager_can_reassign_team_before_submission(
+    client,
+    db_session,
+    manager_token,
+    active_facility,
+    active_indicator,
+    seeded_assessor,
+    seeded_assessor_two,
+) -> None:
+    round_payload, assignment = _create_round_with_scope(client, manager_token, active_facility, active_indicator)
+    assessment_facility_id = assignment["id"]
+    assessment_facility_uuid = UUID(assessment_facility_id)
+    team_response = client.put(
+        f"/api/assessment-facilities/{assessment_facility_id}/team-members",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={
+            "team_members": [
+                {
+                    "user_id": str(seeded_assessor.id),
+                    "team_role": AssessmentTeamRole.TEAM_LEAD.value,
+                    "can_enter_data": True,
+                    "can_submit": True,
+                }
+            ]
+        },
+    )
+    assert team_response.status_code == 200
+    publish = client.post(
+        f"/api/assessment-rounds/{round_payload['id']}/publish",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={"allow_unassigned_facilities": False},
+    )
+    assert publish.status_code == 200
+
+    assessment_facility = db_session.get(AssessmentFacility, assessment_facility_uuid)
+    assessment_facility.status = AssessmentFacilityStatus.IN_PROGRESS
+    db_session.commit()
+
+    reassign = client.put(
+        f"/api/assessment-facilities/{assessment_facility_id}/team-members",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={
+            "team_members": [
+                {
+                    "user_id": str(seeded_assessor_two.id),
+                    "team_role": AssessmentTeamRole.TEAM_LEAD.value,
+                    "can_enter_data": True,
+                    "can_submit": True,
+                },
+                {
+                    "user_id": str(seeded_assessor.id),
+                    "team_role": AssessmentTeamRole.TEAM_MEMBER.value,
+                    "can_enter_data": True,
+                    "can_submit": False,
+                },
+            ]
+        },
+    )
+
+    assert reassign.status_code == 200
+    assert reassign.json()[0]["user_id"] == str(seeded_assessor_two.id)
+    refreshed = db_session.get(AssessmentFacility, assessment_facility_uuid)
+    assert str(refreshed.assigned_assessor_id) == str(seeded_assessor_two.id)
 
 
 def test_round_cannot_publish_without_team_lead(client, manager_token, active_facility, active_indicator):
