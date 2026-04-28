@@ -92,7 +92,7 @@ export function UserManagementPage() {
                 setError(null);
               }}
             >
-              Edit
+              Edit account
             </Button>
             {row.original.is_active ? (
               <Button
@@ -170,7 +170,7 @@ export function UserManagementPage() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-      <Card title="Users" subtitle="Create and manage platform accounts and roles.">
+      <Card title="Users / Team Accounts" subtitle="Create assessor accounts, then edit names, roles, passwords, or account status when needed.">
         {error ? <p className="mb-4 text-sm text-brand-danger">{error}</p> : null}
         {message ? <p className="mb-4 text-sm text-brand-teal">{message}</p> : null}
         {loading ? (
@@ -183,8 +183,8 @@ export function UserManagementPage() {
       </Card>
 
       <Card
-        title={editingUserId ? "Edit User" : "Create User"}
-        subtitle="Managers can add assessors, reviewers, viewers, and other managers."
+        title={editingUserId ? "Edit Account" : "Create Account"}
+        subtitle="Managers can add or update assessors, reviewers, viewers, and other managers."
       >
         <div className="space-y-4">
           <div>

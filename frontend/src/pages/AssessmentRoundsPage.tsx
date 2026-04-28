@@ -127,7 +127,7 @@ export function AssessmentRoundsPage() {
         cell: ({ row }) => (
           <div className="flex flex-wrap items-center gap-3">
             <Link className="text-sm font-semibold text-brand-teal" to={`/assessment-rounds/${row.original.id}`}>
-              View
+              {user?.role === "MANAGER" ? "Edit assessment" : "View"}
             </Link>
             {user?.role === "MANAGER" ? (
               <button
