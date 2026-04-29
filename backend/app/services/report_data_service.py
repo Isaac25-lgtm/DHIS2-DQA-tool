@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.assessment_facility import AssessmentFacility
+from app.models.assessment_facility_team_member import AssessmentFacilityTeamMember
 from app.models.assessment_round import AssessmentRound
 from app.models.assessment_round_indicator import AssessmentRoundIndicator
 from app.models.dqa_value import DqaValue
@@ -52,6 +53,8 @@ def _round_query():
         .options(
             selectinload(AssessmentRound.selected_indicators).joinedload(AssessmentRoundIndicator.indicator),
             selectinload(AssessmentRound.selected_facilities).joinedload(AssessmentFacility.facility),
+            selectinload(AssessmentRound.selected_facilities).joinedload(AssessmentFacility.assigned_assessor),
+            selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.team_members).joinedload(AssessmentFacilityTeamMember.user),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.dqa_values).joinedload(DqaValue.indicator),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.source_document_checks),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.corrective_actions).joinedload(CorrectiveAction.indicator),
@@ -127,6 +130,43 @@ def _serialize_corrective_actions(actions: list[CorrectiveAction]) -> list[dict]
     return [serialize_corrective_action(item).model_dump(mode="json") for item in sorted(actions, key=lambda action: action.created_at)]
 
 
+def _serialize_indicators(assessment_round: AssessmentRound) -> list[dict]:
+    return [
+        {
+            "hmis_code": item.indicator.hmis_code,
+            "indicator_name": item.indicator.indicator_name,
+            "dhis2_uid_or_operand": item.indicator.dhis2_uid_or_operand,
+            "dataset_name": item.indicator.dataset_name,
+            "hmis_section": item.indicator.hmis_section,
+            "source_register": item.indicator.source_register,
+            "indicator_group": item.indicator.indicator_group,
+            "is_death_indicator": item.indicator.is_death_indicator,
+        }
+        for item in sorted(assessment_round.selected_indicators, key=lambda indicator: indicator.display_order)
+    ]
+
+
+def _build_dhis2_sync_summary(values: list[DqaValue]) -> dict:
+    statuses = [value.dhis2_api_status for value in values]
+    successful = sum(1 for status_value in statuses if status_value == "SUCCESS")
+    no_data = sum(1 for status_value in statuses if status_value == "NO_DATA")
+    errors = sum(1 for status_value in statuses if status_value in {"ERROR", "NOT_CONFIGURED"})
+    extracted_times = [value.dhis2_extracted_at for value in values if value.dhis2_extracted_at]
+    return {
+        "dhis2_values_successfully_pulled": successful,
+        "dhis2_no_data_count": no_data,
+        "dhis2_error_count": errors,
+        "last_sync_time": max(extracted_times).isoformat() if extracted_times else None,
+        "facilities_with_sync_errors": [],
+    }
+
+
+def _completion_percent(assessed: int, selected: int) -> float:
+    if selected <= 0:
+        return 0.0
+    return round((assessed / selected) * 100, 1)
+
+
 def _facility_report_data(db: Session, assessment_facility_id: UUID, include_comments: bool, current_user: User) -> tuple[str, dict]:
     assessment_facility = db.scalar(_assessment_facility_query().where(AssessmentFacility.id == assessment_facility_id))
     if not assessment_facility:
@@ -134,6 +174,7 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
 
     comparison_results = get_comparison_results_for_assessment_facility(db, assessment_facility_id, current_user).model_dump(mode="json")
     facility_summary = get_assessment_facility_summary(db, assessment_facility_id, current_user).model_dump(mode="json")
+    dqa_values = list(assessment_facility.dqa_values)
     structured_input = {
         "report_scope": "facility",
         "assessment_round": {
@@ -143,6 +184,20 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
             "period_type": assessment_facility.assessment_round.period_type.value,
             "deadline": assessment_facility.assessment_round.deadline.isoformat() if assessment_facility.assessment_round.deadline else None,
         },
+        "organization": {
+            "name": "Uganda Catholic Medical Bureau",
+            "report_prepared_for": "UCMB leadership and assessment stakeholders",
+            "report_prepared_by": current_user.full_name,
+            "report_date": datetime.now(UTC).date().isoformat(),
+        },
+        "coverage": {
+            "total_facilities_selected": 1,
+            "facilities_assessed": 1,
+            "facilities_pending": 0,
+            "percentage_completed": 100.0,
+            "districts_covered": [assessment_facility.facility.district],
+            "facility_types": [assessment_facility.facility.facility_type],
+        },
         "facility": {
             "id": str(assessment_facility.facility.id),
             "facility_name": assessment_facility.facility.facility_name,
@@ -151,6 +206,17 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
             "ownership": assessment_facility.facility.ownership,
         },
         "assessment_status": assessment_facility.status.value,
+        "indicators_assessed": _serialize_indicators(assessment_facility.assessment_round),
+        "comparison_summary": {
+            "total_rows_assessed": len(comparison_results["comparison_rows"]),
+            "exact_matches": facility_summary["exact_count"],
+            "within_5_percent": facility_summary["minor_count"],
+            "flagged_above_5_percent": facility_summary["moderate_count"] + facility_summary["major_count"],
+            "critical_flags": facility_summary["critical_count"],
+            "incomplete_rows": facility_summary["missing_count"],
+            "overall_match_rate": facility_summary["score_percent"],
+            "overall_flag_rate": round(100 - facility_summary["score_percent"], 1),
+        },
         "dqa_score": facility_summary,
         "source_document_summary": comparison_results["source_document_summary"],
         "source_document_checks": _serialize_source_document_checks(assessment_facility.source_document_checks),
@@ -164,6 +230,7 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
             row for row in comparison_results["comparison_rows"] if row.get("severity") == "MISSING"
         ],
         "corrective_actions": _serialize_corrective_actions(list(assessment_facility.corrective_actions)),
+        "dhis2_sync_summary": _build_dhis2_sync_summary(dqa_values),
         "dhis2_extraction_metadata": [
             {
                 "indicator_id": str(item.indicator_id),
@@ -174,6 +241,11 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
             }
             for item in sorted(assessment_facility.dqa_values, key=lambda value: value.indicator_id)
         ],
+        "general_facility_comments": (
+            [{"facility_name": assessment_facility.facility.facility_name, "comment": assessment_facility.general_assessment_comment}]
+            if include_comments and assessment_facility.general_assessment_comment
+            else []
+        ),
         "generated_timestamp": datetime.now(UTC).isoformat(),
         "include_comments": include_comments,
     }
@@ -196,6 +268,20 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
     corrective_actions = _serialize_corrective_actions(
         [action for facility in assessment_round.selected_facilities for action in facility.corrective_actions]
     )
+    assessed_facilities = [facility for facility in assessment_round.selected_facilities if facility.submitted_at]
+    all_dqa_values = [value for facility in assessment_round.selected_facilities for value in facility.dqa_values]
+    districts = sorted({facility.facility.district for facility in assessment_round.selected_facilities})
+    facility_types = sorted({facility.facility.facility_type for facility in assessment_round.selected_facilities})
+    teams = [
+        {
+            "facility": facility.facility.facility_name,
+            "team_lead": facility.assigned_assessor.full_name if facility.assigned_assessor else None,
+            "team_members": [member.user.full_name for member in facility.team_members if member.user and member.is_active],
+            "status": facility.status.value,
+            "submitted_at": facility.submitted_at.isoformat() if facility.submitted_at else None,
+        }
+        for facility in assessment_round.selected_facilities
+    ]
 
     common_payload = {
         "assessment_round": {
@@ -205,11 +291,28 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
             "period_type": assessment_round.period_type.value,
             "deadline": assessment_round.deadline.isoformat() if assessment_round.deadline else None,
         },
+        "organization": {
+            "name": "Uganda Catholic Medical Bureau",
+            "report_prepared_for": "UCMB leadership and assessment stakeholders",
+            "report_prepared_by": current_user.full_name,
+            "report_date": datetime.now(UTC).date().isoformat(),
+        },
+        "coverage": {
+            "total_facilities_selected": len(assessment_round.selected_facilities),
+            "facilities_assessed": len(assessed_facilities),
+            "facilities_pending": max(len(assessment_round.selected_facilities) - len(assessed_facilities), 0),
+            "percentage_completed": _completion_percent(len(assessed_facilities), len(assessment_round.selected_facilities)),
+            "districts_covered": districts,
+            "facility_types": facility_types,
+        },
+        "teams": teams,
+        "indicators_assessed": _serialize_indicators(assessment_round),
         "summary": round_summary,
         "facility_score_ranking": facility_analytics,
         "indicator_findings": indicator_analytics,
         "source_document_completeness": source_document_analytics,
         "corrective_actions": corrective_actions,
+        "dhis2_sync_summary": _build_dhis2_sync_summary(all_dqa_values),
         "generated_timestamp": datetime.now(UTC).isoformat(),
         "include_comments": include_comments,
     }

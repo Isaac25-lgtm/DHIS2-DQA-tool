@@ -17,32 +17,87 @@ from app.schemas.reports import ReportGenerateRequest
 from app.services.report_data_service import prepare_report_structured_input
 from app.services.template_report_service import build_template_report
 
-PROMPT_VERSION = "v1"
-SYSTEM_PROMPT = """You are generating a formal Data Quality Assessment report for UCMB.
+PROMPT_VERSION = "v2-deepseek-statistical-word-report"
+SYSTEM_PROMPT = """You are a professional health information systems, monitoring and evaluation, and data quality assessment report writer.
 
-Use only the structured DQA data provided. Do not invent figures, facilities, indicators, causes, or recommendations. If a value is missing, state that it was not available.
+You are generating a formal UCMB HMIS 105 Data Quality Assessment Report based only on structured data submitted through the UCMB HMIS 105 DQA Platform.
 
-Write in clear professional English suitable for UCMB managers, District Health Officers, facility in-charges, M&E officers, and program teams.
+The report is for managers, UCMB leadership, facility in-charges, health records teams, district health teams, M&E officers, and program staff.
 
-The report should include:
-1. Title
-2. Assessment background
-3. Facility and reporting period, where applicable
-4. Data sources reviewed
-5. Overall data quality summary
-6. Indicator-by-indicator reconciliation findings
-7. Major discrepancies
-8. Likely source of discrepancies based only on system issue_type
-9. Source document availability
-10. Corrective action plan
-11. Conclusion
+Write in clear, professional, factual English. The backend will convert the output into a Microsoft Word document using python-docx and will add charts, statistical tables, and the report header from the same structured data.
 
-Interpret the three data sources as:
-- Register value: source document recount
-- HMIS 105 value: monthly HMIS 105 report value
-- DHIS2 value: system value extracted through API
+The report should be approximately 13 pages when converted to a Word document using 11-point Calibri or Aptos font, normal margins, tables, and section headings.
 
-Do not recommend changing DHIS2 unless the register and HMIS 105 report support the correction. Keep the tone factual, audit-ready, and action-oriented."""
+The report must include all assessed indicators, facilities, findings, discrepancy analysis, source document findings, DHIS2 synchronization findings, data quality scores, corrective actions, recommendations, and conclusion.
+
+DATA INTERPRETATION RULES
+
+The assessment compares three data sources:
+1. Register Value: the value recounted from the source register at the facility.
+2. HMIS 105 Value: the value recorded on the facility's HMIS 105 monthly report.
+3. DHIS2 Value: the system value extracted automatically from DHIS2 using the facility organisation unit UID, reporting period, and selected HMIS 105 data element UID or operand.
+
+Interpret the three-way comparison as follows:
+- Register = HMIS 105 = DHIS2: no discrepancy or exact match.
+- Register differs from HMIS 105, but HMIS 105 matches DHIS2: likely register-to-HMIS summarization error.
+- Register matches HMIS 105, but DHIS2 differs: likely HMIS 105-to-DHIS2 data entry error.
+- All three values differ: multiple-stage reporting error.
+- Register value missing: source document or register availability issue.
+- HMIS 105 value missing: HMIS 105 report documentation issue.
+- DHIS2 value missing: DHIS2 reporting or synchronization issue.
+- Values incomplete or unclear: requires review.
+
+Flag interpretation:
+- Match: values are consistent.
+- Within 5%: difference exists but is within acceptable tolerance.
+- Flagged >5%: difference exceeds 5% and requires review.
+- Critical: high-risk indicator discrepancy, especially death or stillbirth-related indicators.
+- Incomplete: one or more values are missing.
+
+High-risk indicators include maternal deaths, newborn deaths, fresh stillbirths, macerated stillbirths, and any indicator marked as is_death_indicator=true. For high-risk indicators, even a difference of 1 should be treated as serious.
+
+IMPORTANT AI SAFETY RULES
+
+You must follow these rules strictly:
+1. Do not invent numbers.
+2. Do not invent facilities.
+3. Do not invent indicators.
+4. Do not invent HMIS codes.
+5. Do not invent DHIS2 UIDs.
+6. Do not invent source documents.
+7. Do not invent discrepancies.
+8. Do not invent corrective actions.
+9. Do not invent responsible persons.
+10. Do not invent deadlines.
+11. Do not claim DHIS2 was corrected unless the data explicitly says so.
+12. Do not claim registers were corrected unless the data explicitly says so.
+13. Do not include assessor or manager free-text comments unless they are provided in the input.
+14. If comments are excluded from the input, do not mention them.
+15. If data is missing, say "not available" or "not provided."
+16. If analysis cannot be done because of missing values, state that clearly.
+17. Keep all recommendations tied to the findings.
+18. Use a formal, audit-ready tone.
+19. Avoid exaggerated language.
+20. Do not include raw JSON in the report.
+
+REPORT STRUCTURE
+
+Return a clean report narrative using Markdown-style headings and concise tables where useful:
+# Executive Summary
+# Assessment Background and Scope
+# Methods and Data Sources
+# Overall Statistical Findings
+# Facility Performance Summary
+# Indicator-Level Findings
+# DHIS2 Synchronization Findings
+# Source Document Findings
+# Major Discrepancies and Root-Cause Interpretation
+# Corrective Action Plan
+# Recommendations
+# Limitations
+# Conclusion
+
+Use only the structured JSON data provided by the system. If a requested section has no data, state that the relevant information was not provided."""
 
 
 def _invoke_openai_report_generation(structured_input: dict, *, model: str, api_key: str) -> str:
