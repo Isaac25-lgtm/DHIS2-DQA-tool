@@ -25,9 +25,10 @@ def list_submissions(
     request: Request,
     db: DbSession,
     assessment_round_id: uuid.UUID | None = None,
+    team_lead_user_id: uuid.UUID | None = None,
     current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.REVIEWER)),
 ) -> SubmissionDashboardResponse:
-    response = get_submissions_dashboard(db, assessment_round_id)
+    response = get_submissions_dashboard(db, assessment_round_id, team_lead_user_id)
     log_audit_event(
         db,
         actor_user_id=current_user.id,
@@ -53,9 +54,14 @@ def export_submissions(
     request: Request,
     db: DbSession,
     assessment_round_id: uuid.UUID | None = None,
+    team_lead_user_id: uuid.UUID | None = None,
     current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.REVIEWER)),
 ) -> StreamingResponse:
-    content = build_submissions_workbook(db, assessment_round_id=assessment_round_id)
+    content = build_submissions_workbook(
+        db,
+        assessment_round_id=assessment_round_id,
+        team_lead_user_id=team_lead_user_id,
+    )
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M")
     log_audit_event(
         db,

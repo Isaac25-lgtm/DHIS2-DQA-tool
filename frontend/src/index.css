@@ -1,13 +1,13 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:wght@500;600;700&family=Sora:wght@400;500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  color: #1f2937;
-  background-color: #f5f7fa;
-  font-family: "Manrope", "Segoe UI", sans-serif;
+  color: #0f1e2e;
+  background-color: #f0f4f7;
+  font-family: "Sora", "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -38,10 +38,37 @@ body {
 }
 
 .glass-panel {
-  @apply border border-white/60 bg-white/85 backdrop-blur;
+  @apply border border-white/60 bg-white/90 backdrop-blur;
 }
 
 .page-shell {
-  @apply mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8;
+  @apply mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8;
 }
 
+.font-display {
+  font-family: "Playfair Display", Georgia, serif;
+}
+
+.font-mono-ui {
+  font-family: "DM Mono", "Cascadia Mono", monospace;
+}
+
+.metric-card {
+  @apply rounded-[18px] border border-brand-border bg-white p-5 shadow-soft;
+}
+
+.metric-top-teal {
+  @apply border-t-[3px] border-t-brand-teal;
+}
+
+.metric-top-amber {
+  @apply border-t-[3px] border-t-brand-warning;
+}
+
+.metric-top-red {
+  @apply border-t-[3px] border-t-brand-danger;
+}
+
+.metric-top-purple {
+  @apply border-t-[3px] border-t-purple-500;
+}

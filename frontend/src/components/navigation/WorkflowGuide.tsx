@@ -10,18 +10,9 @@ function messageFor(role: string | undefined, path: string) {
       return "Review submitted assessments here first: select the round, open a facility submission, refresh analysis if needed, then download Excel.";
     }
     if (path.startsWith("/assessment-rounds")) {
-      return "Set up work here: import DHIS2 facilities and indicators first, create an assessment, assign teams, then publish.";
+      return "Set up work here: create an assessment, search DHIS2 for facilities and data elements, assign teams, pre-sync DHIS2 values, then publish.";
     }
-    if (path.startsWith("/facilities")) {
-      return "Start by searching DHIS2 and importing facilities you will assess. Imported facilities remain available later if the network is weak.";
-    }
-    if (path.startsWith("/indicators")) {
-      return "Search DHIS2 HMIS 105 data elements and import only mapped indicators that should appear in assessments.";
-    }
-    if (path.startsWith("/reports")) {
-      return "Generate formal reports after submissions have been analyzed and reviewed.";
-    }
-    return "Manager flow: import DHIS2 facilities and indicators, create an assessment, assign teams, then review submitted data in Submissions.";
+    return "Manager flow: create an assessment, search DHIS2 inside the builder, assign teams, then review submitted data in Submissions.";
   }
   if (role === "ASSESSOR") {
     if (path.startsWith("/my-assessments/")) {
@@ -33,7 +24,7 @@ function messageFor(role: string | undefined, path: string) {
     return "Reviewer flow: inspect submissions, run or refresh analysis, review corrective actions, and support final reporting.";
   }
   if (role === "VIEWER") {
-    return "Viewer flow: use approved reports and summary analytics only. This role is read-only.";
+    return "Viewer flow: use summary analytics only. This role is read-only.";
   }
   return null;
 }

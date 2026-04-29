@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, Eye, PlayCircle, RefreshCcw } from "lucide-react";
+import { Download, Eye, PlayCircle, RefreshCcw, X } from "lucide-react";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -8,7 +8,13 @@ import { Table } from "../components/ui/Table";
 import { assessmentRoundService } from "../services/assessmentRoundService";
 import { comparisonService } from "../services/comparisonService";
 import { submissionService } from "../services/submissionService";
-import type { AssessmentRoundListItem, SubmissionDashboard, SubmissionDetail, SubmissionListItem, SubmissionValueRow } from "../types";
+import type {
+  AssessmentRoundListItem,
+  SubmissionDashboard,
+  SubmissionDetail,
+  SubmissionListItem,
+  SubmissionValueRow,
+} from "../types";
 
 function flagTone(flag: string): "neutral" | "success" | "warning" | "danger" | "info" {
   if (flag === "Match") return "success";
@@ -18,24 +24,49 @@ function flagTone(flag: string): "neutral" | "success" | "warning" | "danger" | 
   return "info";
 }
 
+function pct(referenceValue: number | null, comparisonValue: number | null) {
+  if (referenceValue === null || comparisonValue === null) return null;
+  if (referenceValue === 0 && comparisonValue === 0) return 0;
+  if (referenceValue === 0) return null;
+  return Math.abs(comparisonValue - referenceValue) / Math.abs(referenceValue) * 100;
+}
+
+function formatPct(value: number | null) {
+  return value === null ? "N/A" : `${value.toFixed(1)}%`;
+}
+
+function DiffPill({ value }: { value: number | null }) {
+  const tone = value === null ? "neutral" : value > 5 ? "danger" : value === 0 ? "success" : "warning";
+  return <Badge tone={tone} className="font-mono-ui">{formatPct(value)}</Badge>;
+}
+
 export function SubmissionsPage() {
   const [rounds, setRounds] = useState<AssessmentRoundListItem[]>([]);
   const [selectedRoundId, setSelectedRoundId] = useState("");
+  const [selectedTeamLeadId, setSelectedTeamLeadId] = useState("");
   const [dashboard, setDashboard] = useState<SubmissionDashboard | null>(null);
   const [detail, setDetail] = useState<SubmissionDetail | null>(null);
+  const [cumulativeDetails, setCumulativeDetails] = useState<SubmissionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = async (roundId = selectedRoundId) => {
+  const load = async (roundId = selectedRoundId, teamLeadId = selectedTeamLeadId) => {
     setLoading(true);
     try {
       const [roundList, submissionDashboard] = await Promise.all([
         assessmentRoundService.listRounds(),
-        submissionService.getDashboard(roundId || null),
+        submissionService.getDashboard(roundId || null, teamLeadId || null),
       ]);
       setRounds(roundList);
       setDashboard(submissionDashboard);
+      const detailRows = await Promise.all(
+        submissionDashboard.submissions
+          .filter((item) => item.completed_indicators > 0)
+          .slice(0, 25)
+          .map((item) => submissionService.getSubmission(item.assessment_facility_id).catch(() => null)),
+      );
+      setCumulativeDetails(detailRows.filter((item): item is SubmissionDetail => Boolean(item)));
       if (!roundId && roundList[0]?.id) {
         setSelectedRoundId(roundList[0].id);
       }
@@ -50,9 +81,9 @@ export function SubmissionsPage() {
 
   useEffect(() => {
     if (selectedRoundId) {
-      void load(selectedRoundId);
+      void load(selectedRoundId, selectedTeamLeadId);
     }
-  }, [selectedRoundId]);
+  }, [selectedRoundId, selectedTeamLeadId]);
 
   const submissionColumns = useMemo<ColumnDef<SubmissionListItem>[]>(
     () => [
@@ -93,9 +124,8 @@ export function SubmissionsPage() {
         accessorKey: "dqa_score",
         header: "Score",
         cell: ({ row }) => (
-          <div>
-            <p className="font-semibold text-brand-navy">{row.original.dqa_score.toFixed(1)}%</p>
-            <p className="text-xs text-brand-muted">{row.original.score_category}</p>
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-brand-teal bg-emerald-50">
+            <p className="font-mono-ui text-xs font-semibold text-brand-navy">{row.original.dqa_score.toFixed(0)}%</p>
           </div>
         ),
       },
@@ -120,7 +150,7 @@ export function SubmissionsPage() {
               onClick={async () => setDetail(await submissionService.getSubmission(row.original.assessment_facility_id))}
             >
               <Eye size={14} />
-              View
+              Review
             </Button>
             <Button
               variant="secondary"
@@ -128,7 +158,7 @@ export function SubmissionsPage() {
               onClick={async () => {
                 setRunningId(row.original.assessment_facility_id);
                 await comparisonService.runAssessmentFacilityComparison(row.original.assessment_facility_id);
-                await load(selectedRoundId);
+                await load(selectedRoundId, selectedTeamLeadId);
                 setMessage("Analysis refreshed.");
                 setRunningId(null);
               }}
@@ -147,7 +177,7 @@ export function SubmissionsPage() {
         ),
       },
     ],
-    [runningId, selectedRoundId],
+    [runningId, selectedRoundId, selectedTeamLeadId],
   );
 
   const valueColumns = useMemo<ColumnDef<SubmissionValueRow>[]>(
@@ -158,46 +188,72 @@ export function SubmissionsPage() {
         cell: ({ row }) => (
           <div>
             <p className="font-semibold text-brand-text">{row.original.indicator_name}</p>
-            <p className="text-xs text-brand-muted">{row.original.hmis_code}</p>
+            <p className="font-mono-ui text-xs text-brand-teal">{row.original.hmis_code}</p>
           </div>
         ),
       },
       { accessorKey: "source_register", header: "Source" },
       { accessorKey: "register_value", header: "Register" },
       { accessorKey: "hmis105_value", header: "HMIS 105" },
-      { accessorKey: "dhis2_value_at_assessment", header: "DHIS2" },
       {
-        accessorKey: "discrepancy_percent",
-        header: "% Diff",
-        cell: ({ row }) => row.original.discrepancy_percent === null ? "N/A" : `${row.original.discrepancy_percent.toFixed(1)}%`,
+        accessorKey: "dhis2_value_at_assessment",
+        header: "DHIS2",
+        cell: ({ row }) => (
+          <span className="font-mono-ui rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+            {row.original.dhis2_value_at_assessment ?? "-"}
+          </span>
+        ),
+      },
+      {
+        id: "hmis_reg",
+        header: "HMIS / Reg",
+        cell: ({ row }) => <DiffPill value={pct(row.original.register_value, row.original.hmis105_value)} />,
+      },
+      {
+        id: "dhis_hmis",
+        header: "DHIS2 / HMIS",
+        cell: ({ row }) => <DiffPill value={pct(row.original.hmis105_value, row.original.dhis2_value_at_assessment)} />,
+      },
+      {
+        id: "dhis_reg",
+        header: "DHIS2 / Reg",
+        cell: ({ row }) => <DiffPill value={pct(row.original.register_value, row.original.dhis2_value_at_assessment)} />,
       },
       {
         accessorKey: "flag",
         header: "Flag",
         cell: ({ row }) => <Badge tone={flagTone(row.original.flag)}>{row.original.flag}</Badge>,
       },
-      { accessorKey: "issue_type", header: "Issue" },
     ],
     [],
   );
 
   const stats = dashboard?.stats;
+  const cumulativeRows = cumulativeDetails.flatMap((submission) =>
+    submission.values.map((value) => ({
+      submission,
+      value,
+      hmisReg: pct(value.register_value, value.hmis105_value),
+      dhisHmis: pct(value.hmis105_value, value.dhis2_value_at_assessment),
+      dhisReg: pct(value.register_value, value.dhis2_value_at_assessment),
+    })),
+  );
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-brand-navy via-slate-900 to-brand-teal px-6 py-7 text-white shadow-panel">
+      <section className="overflow-hidden rounded-[28px] bg-[radial-gradient(circle_at_top_right,rgba(26,173,136,.35),transparent_34%),linear-gradient(135deg,#152638,#0f1e2e_58%,#0a7a5e)] px-6 py-7 text-white shadow-panel">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-cyan-200">Manager submissions</p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight">Submitted assessment data</h1>
-            <p className="mt-2 max-w-3xl text-sm text-cyan-50/85">
+            <p className="text-[10px] uppercase tracking-[0.32em] text-emerald-100">Manager submissions</p>
+            <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Submitted assessment data</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/78">
               Review what field teams sent, refresh analysis, and download facility-level or cumulative Excel files from one place.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"
-              className="bg-white/10 text-white hover:bg-white/20"
+              className="border-white/15 bg-white/10 text-white hover:bg-white/20"
               onClick={() => void load(selectedRoundId)}
             >
               <RefreshCcw size={16} />
@@ -205,7 +261,7 @@ export function SubmissionsPage() {
             </Button>
             <Button
               className="bg-white text-brand-navy hover:bg-cyan-50"
-              onClick={() => submissionService.downloadCumulativeXlsx(selectedRoundId || null)}
+              onClick={() => submissionService.downloadCumulativeXlsx(selectedRoundId || null, selectedTeamLeadId || null)}
             >
               <Download size={16} />
               Download cumulative Excel
@@ -214,41 +270,65 @@ export function SubmissionsPage() {
         </div>
       </section>
 
-      <Card title="Assessment filter" subtitle="Select one assessment round to focus submissions and cumulative statistics.">
-        <select
-          className="w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-          value={selectedRoundId}
-          onChange={(event) => {
-            setSelectedRoundId(event.target.value);
-            setDetail(null);
-          }}
-        >
-          <option value="">All assessment rounds</option>
-          {rounds.map((round) => (
-            <option key={round.id} value={round.id}>
-              {round.assessment_code} - {round.name} - {round.reporting_period} - {round.status}
-            </option>
-          ))}
-        </select>
+      <Card title="Filter submissions" subtitle="Teams are named after their Team Lead. Select a Team Lead to view only that team's facilities and statistics.">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label>
+            <span className="mb-2 block text-sm font-semibold text-brand-text">Assessment round</span>
+            <select
+              className="w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+              value={selectedRoundId}
+              onChange={(event) => {
+                setSelectedRoundId(event.target.value);
+                setSelectedTeamLeadId("");
+                setDetail(null);
+              }}
+            >
+              <option value="">All assessment rounds</option>
+              {rounds.map((round) => (
+                <option key={round.id} value={round.id}>
+                  {round.assessment_code} - {round.name} - {round.reporting_period} - {round.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="mb-2 block text-sm font-semibold text-brand-text">Team Lead</span>
+            <select
+              className="w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+              value={selectedTeamLeadId}
+              onChange={(event) => {
+                setSelectedTeamLeadId(event.target.value);
+                setDetail(null);
+              }}
+            >
+              <option value="">All Team Leads</option>
+              {(dashboard?.team_leads ?? []).map((lead) => (
+                <option key={lead.user_id} value={lead.user_id}>
+                  {lead.full_name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </Card>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="bg-white">
+        <Card className="metric-top-teal bg-white">
           <p className="text-sm text-brand-muted">Completion</p>
           <p className="mt-2 text-4xl font-black text-brand-navy">{stats ? stats.completion_percent.toFixed(1) : "--"}%</p>
           <p className="mt-2 text-sm text-brand-muted">{stats?.submitted_facilities ?? 0} submitted of {stats?.total_facilities ?? 0}</p>
         </Card>
-        <Card className="bg-white">
+        <Card className="metric-top-teal bg-white">
           <p className="text-sm text-brand-muted">Submitted data rows</p>
           <p className="mt-2 text-4xl font-black text-brand-navy">{stats?.total_submitted_rows ?? "--"}</p>
           <p className="mt-2 text-sm text-brand-muted">Register, HMIS 105, and DHIS2 rows received</p>
         </Card>
-        <Card className="bg-white">
+        <Card className="metric-top-red bg-white">
           <p className="text-sm text-brand-muted">Flagged rows</p>
           <p className="mt-2 text-4xl font-black text-brand-danger">{stats?.flagged_count ?? "--"}</p>
           <p className="mt-2 text-sm text-brand-muted">{stats?.critical_count ?? 0} critical</p>
         </Card>
-        <Card className="bg-white">
+        <Card className="metric-top-purple bg-white">
           <p className="text-sm text-brand-muted">Average DQA score</p>
           <p className="mt-2 text-4xl font-black text-brand-teal">{stats ? stats.average_score_percent.toFixed(1) : "--"}%</p>
           <p className="mt-2 text-sm text-brand-muted">{stats?.exact_count ?? 0} exact matches</p>
@@ -265,31 +345,110 @@ export function SubmissionsPage() {
         />
       </Card>
 
+      <Card
+        title="Cumulative data grid"
+        subtitle="All submitted facility rows in one manager view. Use Excel export for the full workbook."
+      >
+        <div className="overflow-x-auto rounded-[18px] border border-brand-border">
+          <table className="min-w-[1120px] divide-y divide-brand-border/70 bg-white">
+            <thead>
+              <tr className="bg-brand-blue text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80">
+                <th className="px-4 py-3">Facility</th>
+                <th className="px-4 py-3">Indicator</th>
+                <th className="px-4 py-3">Code</th>
+                <th className="bg-emerald-950/40 px-4 py-3">Register</th>
+                <th className="bg-sky-950/40 px-4 py-3">HMIS 105</th>
+                <th className="border-l-2 border-white/70 bg-emerald-900 px-4 py-3">DHIS2</th>
+                <th className="bg-amber-950/50 px-4 py-3">HMIS / Reg</th>
+                <th className="bg-blue-950/50 px-4 py-3">DHIS2 / HMIS</th>
+                <th className="bg-emerald-950/50 px-4 py-3">DHIS2 / Reg</th>
+                <th className="bg-purple-950/60 px-4 py-3">Flag</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-brand-border/70">
+              {cumulativeRows.length > 0 ? cumulativeRows.map(({ submission, value, hmisReg, dhisHmis, dhisReg }) => (
+                <tr key={`${submission.summary.assessment_facility_id}-${value.indicator_id}`} className="hover:bg-brand-surface/70">
+                  <td className="px-4 py-3 text-sm font-semibold text-brand-text">{submission.summary.facility_name}</td>
+                  <td className="max-w-xs px-4 py-3 text-sm text-brand-text">{value.indicator_name}</td>
+                  <td className="font-mono-ui px-4 py-3 text-sm text-brand-teal">{value.hmis_code}</td>
+                  <td className="font-mono-ui px-4 py-3 text-sm">{value.register_value ?? "-"}</td>
+                  <td className="font-mono-ui px-4 py-3 text-sm">{value.hmis105_value ?? "-"}</td>
+                  <td className="font-mono-ui border-l-2 border-emerald-200 bg-emerald-50/50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                    {value.dhis2_value_at_assessment ?? "-"}
+                  </td>
+                  <td className="px-4 py-3"><DiffPill value={hmisReg} /></td>
+                  <td className="px-4 py-3"><DiffPill value={dhisHmis} /></td>
+                  <td className="px-4 py-3"><DiffPill value={dhisReg} /></td>
+                  <td className="px-4 py-3"><Badge tone={flagTone(value.flag)}>{value.flag}</Badge></td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-brand-muted">
+                    No submitted values are available for the selected filters yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       {detail ? (
-        <Card
-          title={`${detail.summary.facility_name} submitted data`}
-          subtitle={`Team Lead: ${detail.summary.team_lead ?? "Not set"} · ${detail.summary.completed_indicators}/${detail.summary.total_indicators} indicators completed`}
-        >
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              <Badge tone="info">{detail.summary.score_category}</Badge>
-              <Badge tone={detail.summary.flagged_rows > 0 ? "danger" : "success"}>{detail.summary.flagged_rows} flagged</Badge>
+        <div className="fixed inset-0 z-40 bg-brand-navy/55 backdrop-blur-sm" onClick={() => setDetail(null)}>
+          <aside
+            className="ml-auto h-full w-full max-w-5xl overflow-y-auto bg-white shadow-panel"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-brand-navy px-6 py-4 text-white">
+              <div>
+                <h2 className="font-display text-2xl font-semibold">Reviewing: {detail.summary.facility_name}</h2>
+                <p className="mt-1 text-sm text-white/65">
+                  {detail.summary.team_lead ?? "No Team Lead"} - {detail.summary.completed_indicators}/{detail.summary.total_indicators} indicators completed
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  className="bg-white text-brand-navy hover:bg-emerald-50"
+                  onClick={() => submissionService.downloadSubmissionXlsx(detail.summary.assessment_facility_id)}
+                >
+                  <Download size={16} />
+                  Excel
+                </Button>
+                <Button variant="ghost" className="text-white hover:bg-white/10" onClick={() => setDetail(null)}>
+                  <X size={18} />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-5 p-6">
+              <section className="grid gap-3 md:grid-cols-4">
+                <div className="metric-card metric-top-teal">
+                  <p className="text-sm text-brand-muted">DQA score</p>
+                  <p className="mt-2 text-3xl font-black text-brand-teal">{detail.summary.dqa_score.toFixed(1)}%</p>
+                </div>
+                <div className="metric-card metric-top-red">
+                  <p className="text-sm text-brand-muted">Flagged rows</p>
+                  <p className="mt-2 text-3xl font-black text-brand-danger">{detail.summary.flagged_rows}</p>
+                </div>
+                <div className="metric-card metric-top-amber">
+                  <p className="text-sm text-brand-muted">Status</p>
+                  <p className="mt-2 text-lg font-bold text-brand-text">{detail.summary.status.replace(/_/g, " ")}</p>
+                </div>
+                <div className="metric-card metric-top-purple">
+                  <p className="text-sm text-brand-muted">Category</p>
+                  <p className="mt-2 text-lg font-bold text-brand-text">{detail.summary.score_category}</p>
+                </div>
+              </section>
               {detail.summary.general_assessment_comment ? (
-                <Badge tone="neutral">Comment included</Badge>
+                <div className="rounded-[18px] border border-brand-border bg-brand-surface px-4 py-3 text-sm text-brand-muted">
+                  {detail.summary.general_assessment_comment}
+                </div>
               ) : null}
+              <Card title="Assessment values and three-way differences">
+                <Table data={detail.values} columns={valueColumns} />
+              </Card>
             </div>
-            <Button onClick={() => submissionService.downloadSubmissionXlsx(detail.summary.assessment_facility_id)}>
-              <Download size={16} />
-              Download this submission
-            </Button>
-          </div>
-          {detail.summary.general_assessment_comment ? (
-            <div className="mb-4 rounded-2xl bg-brand-surface px-4 py-3 text-sm text-brand-muted">
-              {detail.summary.general_assessment_comment}
-            </div>
-          ) : null}
-          <Table data={detail.values} columns={valueColumns} />
-        </Card>
+          </aside>
+        </div>
       ) : null}
     </div>
   );

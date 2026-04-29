@@ -17,9 +17,12 @@ async function downloadBlob(url: string, fallbackFileName: string) {
 }
 
 export const submissionService = {
-  async getDashboard(assessmentRoundId?: string | null) {
+  async getDashboard(assessmentRoundId?: string | null, teamLeadUserId?: string | null) {
     const response = await api.get<SubmissionDashboard>("/submissions", {
-      params: assessmentRoundId ? { assessment_round_id: assessmentRoundId } : undefined,
+      params: {
+        ...(assessmentRoundId ? { assessment_round_id: assessmentRoundId } : {}),
+        ...(teamLeadUserId ? { team_lead_user_id: teamLeadUserId } : {}),
+      },
     });
     return response.data;
   },
@@ -29,8 +32,15 @@ export const submissionService = {
     return response.data;
   },
 
-  downloadCumulativeXlsx(assessmentRoundId?: string | null) {
-    const query = assessmentRoundId ? `?assessment_round_id=${assessmentRoundId}` : "";
+  downloadCumulativeXlsx(assessmentRoundId?: string | null, teamLeadUserId?: string | null) {
+    const params = new URLSearchParams();
+    if (assessmentRoundId) {
+      params.set("assessment_round_id", assessmentRoundId);
+    }
+    if (teamLeadUserId) {
+      params.set("team_lead_user_id", teamLeadUserId);
+    }
+    const query = params.toString() ? `?${params.toString()}` : "";
     return downloadBlob(`/submissions/export/xlsx${query}`, "ucmb-submissions.xlsx");
   },
 

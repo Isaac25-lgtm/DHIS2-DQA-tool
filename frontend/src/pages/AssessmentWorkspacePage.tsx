@@ -12,9 +12,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { assessmentWorkspaceService } from "../services/assessmentWorkspaceService";
 import { dhis2Service } from "../services/dhis2Service";
-import { dqaValueService } from "../services/dqaValueService";
 import {
-  clearSyncedDraft,
   getAssessmentDraft,
   getCachedAssessment,
   saveCachedAssessment,
@@ -112,7 +110,6 @@ export function AssessmentWorkspacePage() {
   const [generalAssessmentComment, setGeneralAssessmentComment] = useState("");
   const [seedDraft, setSeedDraft] = useState<AssessmentDraft | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingOnline, setSavingOnline] = useState(false);
   const [syncingWithDhis2, setSyncingWithDhis2] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -212,7 +209,6 @@ export function AssessmentWorkspacePage() {
     ((user?.role === "ASSESSOR" && workspace?.workspace_mode === "EDIT") ||
       (user?.role === "MANAGER" &&
         !["CLOSED", "ARCHIVED"].includes(workspace?.assessment_round.status ?? "")));
-  const canSaveOnline = workspace?.workspace_mode === "EDIT" && isOnline;
   const currentTeamMember = workspace?.assessment_facility.team_members.find((member) => member.user_id === user?.id && member.is_active);
   const canSubmit = Boolean(
     workspace?.workspace_mode === "EDIT" &&
@@ -246,35 +242,6 @@ export function AssessmentWorkspacePage() {
           : item,
       ),
     );
-  };
-
-  const handleSaveOnline = async () => {
-    if (!assessmentFacilityId || !workspace) {
-      return;
-    }
-
-    setSavingOnline(true);
-    setMessage(null);
-    try {
-      await dqaValueService.saveValues(
-        assessmentFacilityId,
-        editableValues.map((item) => ({
-          indicator_id: item.indicator_id,
-          register_value: item.register_value,
-          hmis105_value: item.hmis105_value,
-          assessor_comment: item.assessor_comment,
-        })),
-      );
-      await dqaValueService.saveGeneralComment(assessmentFacilityId, generalAssessmentComment || null);
-      await clearSyncedDraft(assessmentFacilityId);
-      setSeedDraft(null);
-      await loadWorkspace();
-      setMessage("Saved online.");
-    } catch (saveError) {
-      setMessage(saveError instanceof Error ? saveError.message : "Unable to save values online.");
-    } finally {
-      setSavingOnline(false);
-    }
   };
 
   const handleSyncWithDhis2 = async () => {
@@ -397,8 +364,8 @@ export function AssessmentWorkspacePage() {
         />
       ) : null}
 
-      <section className="rounded-2xl border border-brand-border/70 bg-white px-6 py-5 shadow-soft">
-        <div className="flex flex-wrap gap-3">
+      <section className="sticky bottom-4 z-10 rounded-[22px] border border-brand-border bg-white/95 px-5 py-4 shadow-panel backdrop-blur">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="secondary"
             className="gap-2"
@@ -411,15 +378,6 @@ export function AssessmentWorkspacePage() {
           <Button
             variant="secondary"
             className="gap-2"
-            onClick={() => void handleSaveOnline()}
-            disabled={!canSaveOnline || savingOnline}
-          >
-            <Save size={16} />
-            {savingOnline ? "Saving..." : "Save online"}
-          </Button>
-          <Button
-            variant="secondary"
-            className="gap-2"
             onClick={() => void handleSyncWithDhis2()}
             disabled={!canSyncWithDhis2 || syncingWithDhis2}
           >
@@ -427,12 +385,12 @@ export function AssessmentWorkspacePage() {
             {!isOnline ? "Offline - saved locally" : syncingWithDhis2 ? "Syncing..." : "Sync with DHIS2"}
           </Button>
           {canSubmit ? (
-            <Button className="gap-2" onClick={() => void handleSubmitAssessment()} disabled={submitting}>
+            <Button className="ml-auto gap-2" onClick={() => void handleSubmitAssessment()} disabled={submitting}>
               <Send size={16} />
               {submitting ? "Sending..." : isOnline ? "Send to Manager" : "Mark to send"}
             </Button>
           ) : workspace.workspace_mode === "EDIT" ? (
-            <Button disabled>Only the Team Lead can send this assessment</Button>
+            <Button className="ml-auto" disabled>Only the Team Lead can send this assessment</Button>
           ) : null}
         </div>
       </section>

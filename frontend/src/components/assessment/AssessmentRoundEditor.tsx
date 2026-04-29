@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ClipboardList, MapPinned, Users } from "lucide-react";
-import { Link } from "react-router-dom";
 import { z } from "zod";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -11,12 +10,15 @@ import { Textarea } from "../ui/Textarea";
 import { useAuth } from "../../hooks/useAuth";
 import { assessmentAssignmentService } from "../../services/assessmentAssignmentService";
 import { assessmentRoundService } from "../../services/assessmentRoundService";
+import { dhis2Service } from "../../services/dhis2Service";
 import { facilityService } from "../../services/facilityService";
 import { indicatorService } from "../../services/indicatorService";
 import { userService } from "../../services/userService";
 import type {
   AssessmentRound,
   AssessmentRoundPayload,
+  Dhis2DataElementSearchResult,
+  Dhis2FacilitySearchResult,
   Facility,
   Indicator,
   PeriodType,
@@ -120,11 +122,17 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const [creatingAssessor, setCreatingAssessor] = useState(false);
 
   const [indicatorSearch, setIndicatorSearch] = useState("");
+  const [dhis2IndicatorResults, setDhis2IndicatorResults] = useState<Dhis2DataElementSearchResult[]>([]);
+  const [searchingDhis2Indicators, setSearchingDhis2Indicators] = useState(false);
+  const [importingIndicatorUid, setImportingIndicatorUid] = useState<string | null>(null);
   const [indicatorGroupFilter, setIndicatorGroupFilter] = useState("ALL");
   const [indicatorSectionFilter, setIndicatorSectionFilter] = useState("ALL");
   const [selectedIndicators, setSelectedIndicators] = useState<SelectedIndicatorPayload[]>([]);
 
   const [facilitySearch, setFacilitySearch] = useState("");
+  const [dhis2FacilityResults, setDhis2FacilityResults] = useState<Dhis2FacilitySearchResult[]>([]);
+  const [searchingDhis2Facilities, setSearchingDhis2Facilities] = useState(false);
+  const [importingFacilityUid, setImportingFacilityUid] = useState<string | null>(null);
   const [selectedFacilityIds, setSelectedFacilityIds] = useState<string[]>([]);
   const [teamAssignments, setTeamAssignments] = useState<Record<string, { leadId: string; memberIds: string[] }>>({});
   const [allowUnassignedPublish, setAllowUnassignedPublish] = useState(false);
@@ -215,6 +223,50 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
 
     void load();
   }, [roundId]);
+
+  useEffect(() => {
+    const query = indicatorSearch.trim();
+    if (activeStep !== 1 || query.length < 2 || !canEditDraft) {
+      setDhis2IndicatorResults([]);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setSearchingDhis2Indicators(true);
+      try {
+        const results = await dhis2Service.searchDataElements(query);
+        setDhis2IndicatorResults(results);
+      } catch {
+        setDhis2IndicatorResults([]);
+      } finally {
+        setSearchingDhis2Indicators(false);
+      }
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [activeStep, canEditDraft, indicatorSearch]);
+
+  useEffect(() => {
+    const query = facilitySearch.trim();
+    if (activeStep !== 2 || query.length < 2 || !canEditDraft) {
+      setDhis2FacilityResults([]);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setSearchingDhis2Facilities(true);
+      try {
+        const results = await dhis2Service.searchFacilities(query);
+        setDhis2FacilityResults(results);
+      } catch {
+        setDhis2FacilityResults([]);
+      } finally {
+        setSearchingDhis2Facilities(false);
+      }
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [activeStep, canEditDraft, facilitySearch]);
 
   const indicatorGroups = useMemo(
     () => ["ALL", ...Array.from(new Set(availableIndicators.map((item) => item.indicator_group))).sort()],
@@ -315,6 +367,62 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     setSelectedFacilityIds((current) =>
       current.includes(facilityId) ? current.filter((item) => item !== facilityId) : [...current, facilityId],
     );
+  };
+
+  const importAndSelectIndicator = async (result: Dhis2DataElementSearchResult) => {
+    setImportingIndicatorUid(result.dhis2_uid_or_operand);
+    setFormError(null);
+    try {
+      const indicator = await indicatorService.importFromDhis2(result);
+      setAvailableIndicators((current) =>
+        [indicator, ...current.filter((item) => item.id !== indicator.id)].filter((item) =>
+          Boolean(item.dhis2_uid_or_operand?.trim()),
+        ),
+      );
+      setSelectedIndicators((current) => {
+        if (current.some((item) => item.indicator_id === indicator.id)) {
+          return current;
+        }
+        return [
+          ...current,
+          {
+            indicator_id: indicator.id,
+            display_order: current.length + 1,
+            is_required: true,
+            custom_threshold_percent: null,
+            notes: null,
+          },
+        ];
+      });
+      setMessage(`${indicator.hmis_code} imported from DHIS2 and added to this assessment.`);
+    } catch {
+      setFormError("Unable to import this DHIS2 data element. Confirm your DHIS2 sign-in and try again.");
+    } finally {
+      setImportingIndicatorUid(null);
+    }
+  };
+
+  const importAndSelectFacility = async (result: Dhis2FacilitySearchResult) => {
+    setImportingFacilityUid(result.dhis2_org_unit_uid);
+    setFormError(null);
+    try {
+      const facility = await facilityService.importFromDhis2(result);
+      setAvailableFacilities((current) =>
+        [facility, ...current.filter((item) => item.id !== facility.id)].filter((item) =>
+          Boolean(item.dhis2_org_unit_uid?.trim()),
+        ),
+      );
+      setSelectedFacilityIds((current) => (current.includes(facility.id) ? current : [...current, facility.id]));
+      setTeamAssignments((current) => ({
+        ...current,
+        [facility.id]: current[facility.id] ?? { leadId: "", memberIds: [] },
+      }));
+      setMessage(`${facility.facility_name} imported from DHIS2 and added to this assessment.`);
+    } catch {
+      setFormError("Unable to import this DHIS2 facility. Confirm your DHIS2 sign-in and try again.");
+    } finally {
+      setImportingFacilityUid(null);
+    }
   };
 
   const createAssessorInline = async () => {
@@ -706,7 +814,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
 
       {activeStep === 1 ? (
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card title="Step 2: Select indicators" subtitle="Search for imported DHIS2 HMIS 105 data elements, then add only the indicators needed for this assessment project.">
+          <Card title="Step 2: Select indicators" subtitle="Search DHIS2 directly, import the exact HMIS 105 data elements, and add them to this assessment.">
             <div className="grid gap-3 md:grid-cols-3">
               <Input placeholder="Search by HMIS code, data element name, or DHIS2 UID" value={indicatorSearch} onChange={(event) => setIndicatorSearch(event.target.value)} />
               <Select value={indicatorGroupFilter} onChange={(event) => setIndicatorGroupFilter(event.target.value)}>
@@ -728,46 +836,91 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
             <div className="mt-4 space-y-3">
               {indicatorSearch.trim().length < 2 ? (
                 <div className="rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
-                  Start typing at least 2 characters to search imported DHIS2-backed HMIS 105 data elements. The full indicator library is hidden here to keep assessment setup focused.
+                  Start typing at least 2 characters to search DHIS2 and any data elements already imported into this assessment system.
                 </div>
-              ) : filteredIndicators.length === 0 ? (
+              ) : filteredIndicators.length === 0 && dhis2IndicatorResults.length === 0 && !searchingDhis2Indicators ? (
                 <div className="rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
-                  No DHIS2-backed data elements match this search. Import HMIS 105 data elements from DHIS2 first.
-                  <div className="mt-3">
-                    <Link to="/indicators" className="font-semibold text-brand-teal">
-                      Search DHIS2 data elements
-                    </Link>
+                  No DHIS2 data elements matched this search. Confirm the DHIS2 sign-in in Settings, then try HMIS code, UID, or data element name.
+                </div>
+              ) : null}
+
+              {filteredIndicators.map((indicator) => {
+                  const isSelected = selectedIndicators.some((item) => item.indicator_id === indicator.id);
+                  return (
+                    <label key={indicator.id} className="flex gap-3 rounded-2xl border border-brand-border bg-white p-4">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleIndicator(indicator.id)}
+                        className="mt-1 h-4 w-4"
+                        disabled={!canEditDraft}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-brand-text">{indicator.indicator_name}</p>
+                          <Badge tone="info">{indicator.hmis_code}</Badge>
+                          <Badge tone="success">Imported</Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-brand-muted">
+                          {indicator.indicator_group}
+                          {indicator.hmis_section ? ` - ${indicator.hmis_section}` : ""}
+                          {indicator.source_register ? ` - ${indicator.source_register}` : ""}
+                        </p>
+                        <p className="mt-1 break-all text-xs text-brand-muted">{indicator.dhis2_uid_or_operand}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+
+              {indicatorSearch.trim().length >= 2 ? (
+                <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-brand-navy">DHIS2 search results</p>
+                      <p className="mt-1 text-xs text-brand-muted">Import a result to make it selectable for this assessment.</p>
+                    </div>
+                    {searchingDhis2Indicators ? <Badge tone="info">Searching...</Badge> : null}
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {dhis2IndicatorResults.map((result) => {
+                      const alreadyLocal = availableIndicators.some(
+                        (item) => item.dhis2_uid_or_operand === result.dhis2_uid_or_operand,
+                      );
+                      return (
+                        <div key={result.dhis2_uid_or_operand} className="rounded-xl border border-white bg-white p-3">
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-semibold text-brand-text">{result.name}</p>
+                                <Badge tone="info">{result.hmis_code ?? result.data_element_uid}</Badge>
+                                {alreadyLocal || result.already_imported ? <Badge tone="success">Already imported</Badge> : null}
+                              </div>
+                              <p className="mt-1 text-sm text-brand-muted">{result.dataset_name ?? "Dataset not shown by DHIS2"}</p>
+                              <p className="mt-1 break-all text-xs text-brand-muted">{result.dhis2_uid_or_operand}</p>
+                            </div>
+                            <Button
+                              className="shrink-0 px-3 py-2 text-xs"
+                              onClick={() => void importAndSelectIndicator(result)}
+                              disabled={!canEditDraft || importingIndicatorUid === result.dhis2_uid_or_operand}
+                            >
+                              {importingIndicatorUid === result.dhis2_uid_or_operand
+                                ? "Importing..."
+                                : alreadyLocal || result.already_imported
+                                  ? "Add to assessment"
+                                  : "Import and add"}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {!searchingDhis2Indicators && dhis2IndicatorResults.length === 0 ? (
+                      <p className="rounded-xl bg-white px-3 py-3 text-sm text-brand-muted">
+                        No live DHIS2 results yet for this search.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
-              ) : filteredIndicators.map((indicator) => {
-                const isSelected = selectedIndicators.some((item) => item.indicator_id === indicator.id);
-                return (
-                  <label key={indicator.id} className="flex gap-3 rounded-2xl border border-brand-border bg-white p-4">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleIndicator(indicator.id)}
-                      className="mt-1 h-4 w-4"
-                      disabled={!canEditDraft}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-brand-text">{indicator.indicator_name}</p>
-                        <Badge tone="info">{indicator.hmis_code}</Badge>
-                        <Badge tone="success">DHIS2 mapped</Badge>
-                      </div>
-                      <p className="mt-2 text-sm text-brand-muted">
-                        {indicator.indicator_group}
-                        {indicator.hmis_section ? ` - ${indicator.hmis_section}` : ""}
-                        {indicator.source_register ? ` - ${indicator.source_register}` : ""}
-                      </p>
-                      <p className="mt-1 break-all text-xs text-brand-muted">
-                        {indicator.dhis2_uid_or_operand}
-                      </p>
-                    </div>
-                  </label>
-                );
-              })}
+              ) : null}
             </div>
             <div className="mt-5 flex gap-2">
               <Button onClick={() => void saveIndicators()} disabled={!canEditDraft || saving || !round}>
@@ -834,28 +987,24 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
 
       {activeStep === 2 ? (
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card title="Step 3: Select facilities" subtitle="Select only facilities imported from DHIS2 or linked to a DHIS2 org unit UID.">
+          <Card title="Step 3: Select facilities" subtitle="Search DHIS2 directly, import the facility, and include it in this assessment round.">
             <Input
               placeholder="Search by facility, district, type, or DHIS2 UID"
               value={facilitySearch}
               onChange={(event) => setFacilitySearch(event.target.value)}
             />
-            {availableFacilities.length === 0 ? (
+            {facilitySearch.trim().length < 2 ? (
               <div className="mt-4 rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
-                No DHIS2-linked facilities are available yet.
-                <div className="mt-3">
-                  <Link to="/facilities" className="font-semibold text-brand-teal">
-                    Search DHIS2 facilities
-                  </Link>
-                </div>
+                Start typing at least 2 characters to search DHIS2 and any facilities already imported into this assessment system.
               </div>
-            ) : filteredFacilities.length === 0 ? (
+            ) : filteredFacilities.length === 0 && dhis2FacilityResults.length === 0 && !searchingDhis2Facilities ? (
               <div className="mt-4 rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
-                No imported DHIS2 facilities match this search.
+                No DHIS2 facilities matched this search. Confirm the DHIS2 sign-in in Settings, then try facility name, code, district, or UID.
               </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {filteredFacilities.map((facility) => (
+            ) : null}
+
+            <div className="mt-4 space-y-3">
+              {filteredFacilities.map((facility) => (
                   <label key={facility.id} className="flex gap-3 rounded-2xl border border-brand-border bg-white p-4">
                     <input
                       type="checkbox"
@@ -873,13 +1022,63 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                       </div>
                       <p className="mt-1 text-sm text-brand-muted">{facility.ownership}</p>
                       <p className="mt-1 break-all text-xs text-brand-muted">
-                        DHIS2 org unit UID: {facility.dhis2_org_unit_uid ?? "Missing from local registry"}
+                        DHIS2 org unit UID: {facility.dhis2_org_unit_uid ?? "Missing DHIS2 UID"}
                       </p>
                     </div>
                   </label>
-                ))}
+              ))}
+
+              {facilitySearch.trim().length >= 2 ? (
+                <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-brand-navy">DHIS2 facility results</p>
+                      <p className="mt-1 text-xs text-brand-muted">Import a result to include it in this assessment round.</p>
+                    </div>
+                    {searchingDhis2Facilities ? <Badge tone="info">Searching...</Badge> : null}
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {dhis2FacilityResults.map((result) => {
+                      const alreadyLocal = availableFacilities.some(
+                        (item) => item.dhis2_org_unit_uid === result.dhis2_org_unit_uid,
+                      );
+                      return (
+                        <div key={result.dhis2_org_unit_uid} className="rounded-xl border border-white bg-white p-3">
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-semibold text-brand-text">{result.facility_name}</p>
+                                <Badge tone="info">{result.district}</Badge>
+                                <Badge tone="neutral">{result.facility_type}</Badge>
+                                {alreadyLocal || result.already_imported ? <Badge tone="success">Already imported</Badge> : null}
+                              </div>
+                              <p className="mt-1 text-sm text-brand-muted">{result.dhis2_parent_name ?? "Parent not shown by DHIS2"}</p>
+                              <p className="mt-1 break-all text-xs text-brand-muted">{result.dhis2_org_unit_uid}</p>
+                            </div>
+                            <Button
+                              className="shrink-0 px-3 py-2 text-xs"
+                              onClick={() => void importAndSelectFacility(result)}
+                              disabled={!canEditDraft || importingFacilityUid === result.dhis2_org_unit_uid}
+                            >
+                              {importingFacilityUid === result.dhis2_org_unit_uid
+                                ? "Importing..."
+                                : alreadyLocal || result.already_imported
+                                  ? "Add to assessment"
+                                  : "Import and add"}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {!searchingDhis2Facilities && dhis2FacilityResults.length === 0 ? (
+                      <p className="rounded-xl bg-white px-3 py-3 text-sm text-brand-muted">
+                        No live DHIS2 facility results yet for this search.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               </div>
-            )}
             <div className="mt-5 flex gap-2">
               <Button onClick={() => void saveFacilities()} disabled={!canEditDraft || saving || !round}>
                 {saving ? "Saving..." : "Save selected facilities"}
@@ -890,7 +1089,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
           <Card title="Selected facilities" subtitle={`${selectedFacilityIds.length} facilities currently included in the round.`}>
             {selectedFacilityDetails.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
-                Add facilities from the local registry before you move to assessor assignment.
+                Search DHIS2, import facilities, and add them here before assigning field teams.
               </div>
             ) : (
               <div className="space-y-3">

@@ -5,32 +5,33 @@ export default {
     extend: {
       colors: {
         brand: {
-          navy: "#0B1F33",
-          blue: "#102A43",
-          teal: "#00A6A6",
-          cyan: "#37D5D6",
-          surface: "#F5F7FA",
-          text: "#1F2937",
-          muted: "#64748B",
-          border: "#D8E1EB",
-          success: "#10B981",
-          warning: "#F59E0B",
-          danger: "#EF4444",
+          navy: "#0F1E2E",
+          blue: "#152638",
+          teal: "#0E9070",
+          cyan: "#1AAD88",
+          surface: "#F0F4F7",
+          text: "#0F1E2E",
+          muted: "#7A92A8",
+          border: "#E2EAF0",
+          success: "#16A34A",
+          warning: "#D97706",
+          danger: "#DC2626",
         },
       },
       fontFamily: {
-        sans: ["Manrope", "Segoe UI", "sans-serif"],
+        sans: ["Sora", "Segoe UI", "sans-serif"],
+        display: ["Playfair Display", "Georgia", "serif"],
+        mono: ["DM Mono", "Cascadia Mono", "monospace"],
       },
       boxShadow: {
-        panel: "0 24px 60px -28px rgba(15, 23, 42, 0.28)",
-        soft: "0 16px 40px -24px rgba(16, 42, 67, 0.24)",
+        panel: "0 28px 70px -34px rgba(15, 30, 46, 0.42)",
+        soft: "0 2px 12px rgba(15, 30, 46, 0.07)",
       },
       backgroundImage: {
         "hero-grid":
-          "radial-gradient(circle at top left, rgba(55, 213, 214, 0.18), transparent 38%), radial-gradient(circle at top right, rgba(0, 166, 166, 0.16), transparent 28%)",
+          "radial-gradient(circle at top left, rgba(26, 173, 136, 0.15), transparent 36%), radial-gradient(circle at top right, rgba(14, 144, 112, 0.12), transparent 30%)",
       },
     },
   },
   plugins: [],
 };
-

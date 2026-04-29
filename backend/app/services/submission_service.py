@@ -20,6 +20,7 @@ from app.schemas.submissions import (
     SubmissionDetailResponse,
     SubmissionListItemResponse,
     SubmissionStatsResponse,
+    SubmissionTeamLeadOptionResponse,
     SubmissionValueRowResponse,
 )
 from app.services.scoring_service import calculate_facility_score
@@ -58,15 +59,44 @@ def _selected_indicator_map(assessment_facility: AssessmentFacility) -> dict[UUI
     }
 
 
-def _team_names(assessment_facility: AssessmentFacility) -> tuple[str | None, list[str]]:
+def _team_lead_member(assessment_facility: AssessmentFacility) -> AssessmentFacilityTeamMember | None:
     active_members = [item for item in assessment_facility.team_members if item.is_active]
-    lead = next((item.user.full_name for item in active_members if item.team_role == AssessmentTeamRole.TEAM_LEAD), None)
+    return next((item for item in active_members if item.team_role == AssessmentTeamRole.TEAM_LEAD), None)
+
+
+def _team_names(assessment_facility: AssessmentFacility) -> tuple[UUID | None, str | None, list[str]]:
+    active_members = [item for item in assessment_facility.team_members if item.is_active]
+    lead_member = _team_lead_member(assessment_facility)
+    lead_id = lead_member.user_id if lead_member else None
+    lead = lead_member.user.full_name if lead_member else None
     members = [
         item.user.full_name
         for item in active_members
         if item.team_role == AssessmentTeamRole.TEAM_MEMBER
     ]
-    return lead, members
+    return lead_id, lead, members
+
+
+def _filter_by_team_lead(items: list[AssessmentFacility], team_lead_user_id: UUID | None = None) -> list[AssessmentFacility]:
+    if not team_lead_user_id:
+        return items
+    return [
+        item
+        for item in items
+        if (lead_member := _team_lead_member(item)) is not None and lead_member.user_id == team_lead_user_id
+    ]
+
+
+def _team_lead_options(items: list[AssessmentFacility]) -> list[SubmissionTeamLeadOptionResponse]:
+    options: dict[UUID, str] = {}
+    for item in items:
+        lead_member = _team_lead_member(item)
+        if lead_member:
+            options[lead_member.user_id] = lead_member.user.full_name
+    return [
+        SubmissionTeamLeadOptionResponse(user_id=user_id, full_name=full_name)
+        for user_id, full_name in sorted(options.items(), key=lambda entry: entry[1].lower())
+    ]
 
 
 def _flag_for_value(value: DqaValue | None) -> str:
@@ -97,7 +127,7 @@ def _score_for_facility(assessment_facility: AssessmentFacility) -> dict:
 def serialize_submission_item(assessment_facility: AssessmentFacility) -> SubmissionListItemResponse:
     selected_indicator_ids = {item.indicator_id for item in assessment_facility.assessment_round.selected_indicators}
     values = [item for item in assessment_facility.dqa_values if item.indicator_id in selected_indicator_ids]
-    lead, members = _team_names(assessment_facility)
+    lead_id, lead, members = _team_names(assessment_facility)
     completed = sum(1 for item in values if item.register_value is not None and item.hmis105_value is not None)
     flagged = sum(1 for item in values if item.severity in {SeverityLevel.MODERATE, SeverityLevel.MAJOR, SeverityLevel.CRITICAL})
     critical = sum(1 for item in values if item.severity == SeverityLevel.CRITICAL)
@@ -113,6 +143,7 @@ def serialize_submission_item(assessment_facility: AssessmentFacility) -> Submis
         facility_name=assessment_facility.facility.facility_name,
         district=assessment_facility.facility.district,
         status=assessment_facility.status.value,
+        team_lead_user_id=lead_id,
         team_lead=lead,
         team_members=members,
         submitted_at=assessment_facility.submitted_at,
@@ -188,11 +219,17 @@ def build_submission_stats(items: list[AssessmentFacility]) -> SubmissionStatsRe
     )
 
 
-def get_submissions_dashboard(db: Session, assessment_round_id: UUID | None = None) -> SubmissionDashboardResponse:
+def get_submissions_dashboard(
+    db: Session,
+    assessment_round_id: UUID | None = None,
+    team_lead_user_id: UUID | None = None,
+) -> SubmissionDashboardResponse:
     facilities = _list_assessment_facilities(db, assessment_round_id)
-    submitted = [item for item in facilities if item.status in SUBMITTED_STATUSES]
+    filtered_facilities = _filter_by_team_lead(facilities, team_lead_user_id)
+    submitted = [item for item in filtered_facilities if item.status in SUBMITTED_STATUSES]
     return SubmissionDashboardResponse(
-        stats=build_submission_stats(facilities),
+        stats=build_submission_stats(filtered_facilities),
+        team_leads=_team_lead_options(facilities),
         submissions=[serialize_submission_item(item) for item in sorted(submitted, key=lambda item: item.submitted_at or item.updated_at, reverse=True)],
     )
 
@@ -223,14 +260,19 @@ def _autosize(sheet) -> None:
         sheet.column_dimensions[letter].width = min(max(width + 2, 12), 55)
 
 
-def build_submissions_workbook(db: Session, assessment_round_id: UUID | None = None, assessment_facility_id: UUID | None = None) -> bytes:
+def build_submissions_workbook(
+    db: Session,
+    assessment_round_id: UUID | None = None,
+    assessment_facility_id: UUID | None = None,
+    team_lead_user_id: UUID | None = None,
+) -> bytes:
     if assessment_facility_id:
         detail = get_submission_detail(db, assessment_facility_id)
         items = [detail.summary]
         rows_by_facility = {assessment_facility_id: detail.values}
         stats = build_submission_stats(_list_assessment_facilities(db, detail.summary.assessment_round_id))
     else:
-        dashboard = get_submissions_dashboard(db, assessment_round_id)
+        dashboard = get_submissions_dashboard(db, assessment_round_id, team_lead_user_id)
         items = dashboard.submissions
         rows_by_facility = {item.assessment_facility_id: get_submission_detail(db, item.assessment_facility_id).values for item in items}
         stats = dashboard.stats

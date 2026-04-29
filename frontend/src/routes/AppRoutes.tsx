@@ -11,17 +11,11 @@ import { AssessmentWorkspacePage } from "../pages/AssessmentWorkspacePage";
 import { CorrectiveActionsPage } from "../pages/CorrectiveActionsPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { FacilityDqaProfilePage } from "../pages/FacilityDqaProfilePage";
-import { FacilitiesPage } from "../pages/FacilitiesPage";
-import { IndicatorLibraryPage } from "../pages/IndicatorLibraryPage";
 import { IndicatorAnalyticsPage } from "../pages/IndicatorAnalyticsPage";
 import { LoginPage } from "../pages/LoginPage";
 import { MyAssessmentsPage } from "../pages/MyAssessmentsPage";
-import { ReportDetailPage } from "../pages/ReportDetailPage";
-import { ReportGeneratorPage } from "../pages/ReportGeneratorPage";
-import { ReportsPage } from "../pages/ReportsPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { SubmissionsPage } from "../pages/SubmissionsPage";
-import { UserManagementPage } from "../pages/UserManagementPage";
 import type { UserRole } from "../types";
 
 function ProtectedOutlet() {
@@ -63,15 +57,6 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedOutlet />}>
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route element={<RoleRoute allowedRoles={["MANAGER"]} />}>
-          <Route path="/users" element={<UserManagementPage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER"]} />}>
-          <Route path="/facilities" element={<FacilitiesPage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER", "VIEWER"]} />}>
-          <Route path="/indicators" element={<IndicatorLibraryPage />} />
-        </Route>
         <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER"]} />}>
           <Route path="/assessment-rounds" element={<AssessmentRoundsPage />} />
           <Route path="/assessment-rounds/:id" element={<AssessmentRoundDetailPage />} />
@@ -93,13 +78,6 @@ export function AppRoutes() {
         </Route>
         <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER", "ASSESSOR"]} />}>
           <Route path="/corrective-actions" element={<CorrectiveActionsPage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER", "VIEWER"]} />}>
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/reports/:reportId" element={<ReportDetailPage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER"]} />}>
-          <Route path="/reports/generate" element={<ReportGeneratorPage />} />
         </Route>
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

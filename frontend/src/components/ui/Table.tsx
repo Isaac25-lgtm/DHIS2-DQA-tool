@@ -26,16 +26,16 @@ export function Table<TData>({
   });
 
   return (
-    <div className={cn("overflow-hidden rounded-2xl border border-brand-border/70 bg-white", className)}>
+    <div className={cn("overflow-hidden rounded-[18px] border border-brand-border bg-white shadow-sm", className)}>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-100">
-          <thead className="bg-slate-50/90">
+        <table className="min-w-full divide-y divide-brand-border/70">
+          <thead className="bg-brand-blue">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-brand-muted"
+                    className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
                   >
                     {header.isPlaceholder
                       ? null
@@ -45,10 +45,10 @@ export function Table<TData>({
               </tr>
             ))}
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-brand-border/70">
             {table.getRowModel().rows.length > 0 ? (
               table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50/80">
+                <tr key={row.id} className="transition hover:bg-brand-surface/80">
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3 text-sm text-brand-text">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -72,4 +72,3 @@ export function Table<TData>({
     </div>
   );
 }
-

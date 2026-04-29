@@ -1,6 +1,5 @@
-import { AlertTriangle, CalendarClock, MapPinned, Rows3, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, MapPinned, Rows3, ShieldCheck, Users } from "lucide-react";
 import { Badge } from "../ui/Badge";
-import { Card } from "../ui/Card";
 import type { AssessmentWorkspace } from "../../types";
 
 export function AssessmentSummaryCard({
@@ -19,24 +18,59 @@ export function AssessmentSummaryCard({
   const dhis2Statuses = workspace.values.map((value) => value.dhis2_api_status ?? "NOT_PULLED");
   const hasDhis2Error = dhis2Statuses.some((status) => status === "ERROR" || status === "NOT_CONFIGURED");
   const hasDhis2Success = dhis2Statuses.some((status) => status === "SUCCESS");
+  const completedRows = workspace.values.filter(
+    (value) => value.register_value !== null && value.hmis105_value !== null,
+  ).length;
+  const totalRows = workspace.selected_indicators.length;
+  const completionPercent = totalRows > 0 ? Math.round((completedRows / totalRows) * 100) : 0;
+  const circumference = 150.8;
+  const strokeOffset = circumference - (completionPercent / 100) * circumference;
 
   return (
-    <Card
-      title={workspace.assessment_round.name}
-      subtitle="Online assessor workspace with server-side DHIS2 auto-population."
-      className="border-brand-border/70"
-    >
-      <div className="flex flex-wrap gap-2">
-        <Badge tone="success">{workspace.assessment_round.assessment_code}</Badge>
-        <Badge tone="info">{workspace.facility.facility_name}</Badge>
-        <Badge tone="neutral">{workspace.assessment_round.reporting_period}</Badge>
-        <Badge tone={workspace.workspace_mode === "EDIT" ? "success" : "warning"}>
-          {workspace.workspace_mode === "EDIT" ? "Edit mode" : "Read-only mode"}
-        </Badge>
+    <section className="overflow-hidden rounded-[28px] border border-brand-border bg-white shadow-panel">
+      <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top_right,rgba(26,173,136,.35),transparent_34%),linear-gradient(135deg,#152638,#0f1e2e_58%,#0a7a5e)] px-6 py-6 text-white">
+        <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.32em] text-emerald-100">Data quality assessment</p>
+            <h1 className="mt-2 font-display text-5xl font-semibold leading-none">DQA</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">
+              Field workspace for register recounts, HMIS 105 report values, and read-only DHIS2 system values.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Badge tone="success" className="border-white/15 bg-white/10 text-white">{workspace.assessment_round.assessment_code}</Badge>
+              <Badge tone="info" className="border-white/15 bg-white/10 text-white">{workspace.facility.facility_name}</Badge>
+              <Badge tone="neutral" className="border-white/15 bg-white/10 text-white">{workspace.assessment_round.reporting_period}</Badge>
+              <Badge tone={workspace.workspace_mode === "EDIT" ? "success" : "warning"}>
+                {workspace.workspace_mode === "EDIT" ? "Edit mode" : "Read-only mode"}
+              </Badge>
+            </div>
+          </div>
+          <div className="relative flex h-32 w-32 items-center justify-center">
+            <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 56 56">
+              <circle cx="28" cy="28" r="24" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="5" />
+              <circle
+                cx="28"
+                cy="28"
+                r="24"
+                fill="none"
+                stroke="#4ade80"
+                strokeLinecap="round"
+                strokeWidth="5"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeOffset}
+                className="transition-all duration-700"
+              />
+            </svg>
+            <div className="text-center">
+              <p className="font-mono-ui text-2xl font-semibold">{completionPercent}%</p>
+              <p className="text-[11px] text-white/65">{completedRows}/{totalRows} indicators</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl bg-brand-surface px-4 py-4">
+      <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <MapPinned size={16} />
             Facility
@@ -45,7 +79,7 @@ export function AssessmentSummaryCard({
           <p className="mt-1 text-sm text-brand-muted">{workspace.facility.district}</p>
         </div>
 
-        <div className="rounded-xl bg-brand-surface px-4 py-4">
+        <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <Users size={16} />
             Field team
@@ -56,7 +90,7 @@ export function AssessmentSummaryCard({
           </p>
         </div>
 
-        <div className="rounded-xl bg-brand-surface px-4 py-4">
+        <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <CalendarClock size={16} />
             Deadline
@@ -64,7 +98,7 @@ export function AssessmentSummaryCard({
           <p className="mt-2 font-semibold text-brand-text">{workspace.assessment_round.deadline ?? "Not set"}</p>
         </div>
 
-        <div className="rounded-xl bg-brand-surface px-4 py-4">
+        <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <Rows3 size={16} />
             Indicators
@@ -72,7 +106,7 @@ export function AssessmentSummaryCard({
           <p className="mt-2 font-semibold text-brand-text">{workspace.selected_indicators.length}</p>
         </div>
 
-        <div className="rounded-xl bg-brand-surface px-4 py-4">
+        <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <AlertTriangle size={16} />
             Required missing
@@ -80,7 +114,7 @@ export function AssessmentSummaryCard({
           <p className="mt-2 font-semibold text-brand-text">{missingRequiredCount}</p>
         </div>
 
-        <div className="rounded-xl bg-brand-surface px-4 py-4">
+        <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <ShieldCheck size={16} />
             DHIS2 pull
@@ -90,14 +124,17 @@ export function AssessmentSummaryCard({
           </p>
           <p className="mt-1 text-sm text-brand-muted">Status is based on field-time DHIS2 extraction metadata.</p>
         </div>
-      </div>
 
-      <div className="mt-5 rounded-xl border border-dashed border-brand-border bg-brand-surface px-4 py-3 text-sm text-brand-muted">
-        <div className="flex items-center gap-2 text-brand-text">
-          <ShieldCheck size={16} className="text-brand-teal" />
-          This assessment will support offline draft entry in the next release.
+        <div className="rounded-[18px] border border-emerald-100 bg-emerald-50 px-4 py-4 xl:col-span-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+            <CheckCircle2 size={16} />
+            DHIS2 values are handled server-side
+          </div>
+          <p className="mt-1 text-sm text-emerald-700">
+            The green DHIS2 column is read-only for the assessment team and is never typed manually.
+          </p>
         </div>
       </div>
-    </Card>
+    </section>
   );
 }

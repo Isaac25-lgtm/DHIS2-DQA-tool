@@ -1,15 +1,11 @@
 import {
   ActivitySquare,
-  Building2,
   ClipboardList,
   ClipboardX,
   ClipboardCheck,
-  FileSpreadsheet,
   Gauge,
-  Layers3,
   PackageCheck,
   Settings,
-  UsersRound,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
@@ -26,16 +22,11 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge, roles: ["MANAGER", "ASSESSOR", "REVIEWER", "VIEWER"] },
-  { to: "/users", label: "Users / Teams", icon: UsersRound, roles: ["MANAGER"] },
-  { to: "/facilities", label: "Facilities", icon: Building2, roles: ["MANAGER"] },
-  { to: "/indicators", label: "Indicator Library", icon: Layers3, roles: ["MANAGER"] },
   { to: "/assessment-rounds", label: "Assessments", icon: ClipboardList, roles: ["MANAGER", "REVIEWER"] },
   { to: "/submissions", label: "Submissions", icon: ClipboardCheck, roles: ["MANAGER", "REVIEWER"] },
   { to: "/analytics", label: "Analytics", icon: ActivitySquare, roles: ["REVIEWER", "VIEWER"] },
   { to: "/corrective-actions", label: "Corrective Actions", icon: ClipboardX, roles: ["REVIEWER"] },
   { to: "/my-assessments", label: "My Assessments", icon: PackageCheck, roles: ["ASSESSOR"] },
-  { to: "/reports", label: "Reports", icon: FileSpreadsheet, roles: ["MANAGER", "REVIEWER"] },
-  { to: "/reports", label: "Approved Reports", icon: FileSpreadsheet, roles: ["VIEWER"] },
   { to: "/settings", label: "Settings", icon: Settings, roles: ["MANAGER", "ASSESSOR", "REVIEWER"] },
 ];
 
@@ -44,14 +35,14 @@ export function Sidebar() {
   const allowedNavItems = navItems.filter((item) => hasAnyRole(user?.role, item.roles));
 
   return (
-    <aside className="glass-panel border-b border-white/70 lg:min-h-screen lg:w-72 lg:border-b-0 lg:border-r">
+    <aside className="border-b border-white/10 bg-brand-blue text-white shadow-panel lg:sticky lg:top-0 lg:min-h-screen lg:w-64 lg:border-b-0 lg:border-r lg:border-white/10">
       <div className="flex items-center gap-3 px-5 py-5 lg:px-6">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-navy text-white shadow-panel">
-          <span className="text-sm font-extrabold tracking-[0.2em]">UC</span>
+        <div className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-brand-teal text-white shadow-panel">
+          <span className="font-mono-ui text-sm font-bold tracking-[0.2em]">UC</span>
         </div>
         <div>
-          <p className="text-xs uppercase tracking-[0.28em] text-brand-teal">UCMB Analytics</p>
-          <h1 className="text-base font-bold text-brand-text">HMIS 105 DQA</h1>
+          <p className="text-[10px] uppercase tracking-[0.28em] text-emerald-200">UCMB Analytics</p>
+          <h1 className="text-base font-bold text-white">HMIS 105 DQA</h1>
         </div>
       </div>
 
@@ -66,7 +57,7 @@ export function Sidebar() {
                 "inline-flex min-w-fit items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition",
                 isActive
                   ? "bg-brand-teal text-white shadow-soft"
-                  : "text-brand-muted hover:bg-white hover:text-brand-text",
+                  : "text-white/68 hover:bg-white/10 hover:text-white",
               )
             }
           >
@@ -75,6 +66,14 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+      <div className="hidden px-5 pb-5 pt-3 lg:block">
+        <div className="rounded-[18px] border border-white/10 bg-white/5 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">Role</p>
+          <p className="mt-1 text-sm font-semibold text-white">{user?.role ?? "Authenticated"}</p>
+          <p className="mt-3 text-[10px] uppercase tracking-[0.24em] text-white/45">Organisation</p>
+          <p className="mt-1 text-sm font-semibold text-emerald-100">UCMB</p>
+        </div>
+      </div>
     </aside>
   );
 }

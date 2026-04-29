@@ -32,6 +32,7 @@ class SubmissionListItemResponse(BaseModel):
     facility_name: str
     district: str
     status: str
+    team_lead_user_id: UUID | None
     team_lead: str | None
     team_members: list[str]
     submitted_at: datetime | None
@@ -43,6 +44,11 @@ class SubmissionListItemResponse(BaseModel):
     dqa_score: float
     score_category: str
     general_assessment_comment: str | None
+
+
+class SubmissionTeamLeadOptionResponse(BaseModel):
+    user_id: UUID
+    full_name: str
 
 
 class SubmissionValueRowResponse(BaseModel):
@@ -71,4 +77,5 @@ class SubmissionDetailResponse(BaseModel):
 
 class SubmissionDashboardResponse(BaseModel):
     stats: SubmissionStatsResponse
+    team_leads: list[SubmissionTeamLeadOptionResponse]
     submissions: list[SubmissionListItemResponse]

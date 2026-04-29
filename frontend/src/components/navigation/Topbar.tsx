@@ -13,9 +13,6 @@ import { Button } from "../ui/Button";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Operational Data Quality Dashboard",
-  "/users": "Users / Team Accounts",
-  "/facilities": "Facilities",
-  "/indicators": "Indicator Library",
   "/assessment-rounds": "Assessment Rounds",
   "/assessment-facilities": "Assessment Workspace Review",
   "/submissions": "Submissions",
@@ -25,7 +22,6 @@ const pageTitles: Record<string, string> = {
   "/facility-dqa": "Facility DQA Profile",
   "/indicator-analytics": "Indicator Analytics",
   "/corrective-actions": "Corrective Actions",
-  "/reports": "Reports",
   "/settings": "Settings",
 };
 
@@ -54,11 +50,11 @@ export function Topbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-10 border-b border-white/70 bg-white/80 backdrop-blur">
-      <div className="page-shell flex flex-col gap-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+    <header className="sticky top-0 z-20 border-b border-white/10 bg-brand-navy text-white shadow-panel">
+      <div className="page-shell flex flex-col gap-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-brand-teal">UCMB HMIS 105 Platform</p>
-          <h2 className="mt-1 text-2xl font-bold text-brand-text">{currentTitle}</h2>
+          <p className="text-[10px] uppercase tracking-[0.26em] text-emerald-200">UCMB HMIS 105 Platform</p>
+          <h2 className="mt-1 font-display text-2xl font-semibold text-white">{currentTitle}</h2>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -77,11 +73,11 @@ export function Topbar() {
                 ? `${pendingSyncCount} pending sync`
                 : "Sync clear"}
           </Badge>
-          <button className="rounded-2xl border border-brand-border bg-white p-3 text-brand-muted shadow-sm transition hover:text-brand-text">
+          <button className="rounded-2xl border border-white/10 bg-white/10 p-3 text-white/75 shadow-sm transition hover:bg-white/20 hover:text-white">
             <Bell size={18} />
           </button>
-          <div className="flex items-center gap-3 rounded-2xl border border-brand-border bg-white px-3 py-2 shadow-sm">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-navy text-sm font-bold text-white">
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/8 px-3 py-2 shadow-sm">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-teal text-sm font-bold text-white">
               {(user?.full_name ?? "U")
                 .split(" ")
                 .map((part) => part[0])
@@ -90,11 +86,11 @@ export function Topbar() {
                 .toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-semibold text-brand-text">{user?.full_name ?? "Authenticated user"}</p>
-              <p className="text-xs text-brand-muted">{user?.role ?? "Unknown role"}</p>
+              <p className="text-sm font-semibold text-white">{user?.full_name ?? "Authenticated user"}</p>
+              <p className="text-xs text-white/60">{user?.role ?? "Unknown role"}</p>
             </div>
           </div>
-          <Button variant="secondary" className="gap-2" onClick={() => void logout()}>
+          <Button variant="secondary" className="border-white/15 bg-white/10 text-white hover:bg-white/20" onClick={() => void logout()}>
             <LogOut size={16} />
             Sign out
           </Button>

@@ -16,14 +16,14 @@ export function Card({
   return (
     <section
       className={cn(
-        "glass-panel rounded-2xl border border-brand-border/70 p-5 shadow-soft",
+        "rounded-[22px] border border-brand-border bg-white p-5 shadow-soft",
         className,
       )}
       {...props}
     >
       {(title || subtitle) && (
-        <header className="mb-4">
-          {title ? <h2 className="text-lg font-semibold text-brand-text">{title}</h2> : null}
+        <header className="mb-5 border-b border-brand-border/70 pb-4">
+          {title ? <h2 className="font-display text-xl font-semibold text-brand-text">{title}</h2> : null}
           {subtitle ? <p className="mt-1 text-sm text-brand-muted">{subtitle}</p> : null}
         </header>
       )}
@@ -31,4 +31,3 @@ export function Card({
     </section>
   );
 }
-

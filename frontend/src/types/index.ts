@@ -509,6 +509,7 @@ export interface SubmissionListItem {
   facility_name: string;
   district: string;
   status: AssessmentFacilityStatus;
+  team_lead_user_id: string | null;
   team_lead: string | null;
   team_members: string[];
   submitted_at: string | null;
@@ -548,6 +549,7 @@ export interface SubmissionDetail {
 
 export interface SubmissionDashboard {
   stats: SubmissionStats;
+  team_leads: Array<{ user_id: string; full_name: string }>;
   submissions: SubmissionListItem[];
 }
 
