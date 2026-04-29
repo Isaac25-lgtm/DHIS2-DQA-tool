@@ -14,6 +14,22 @@ import type { Dhis2ConnectionStatus, SystemInfo } from "../types";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 
+function readApiError(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "response" in error) {
+    const response = (error as { response?: { status?: number; data?: { detail?: string } } }).response;
+    if (response?.status === 403) {
+      return "Only manager accounts can sign in to DHIS2. Sign out and log back in as a manager.";
+    }
+    if (response?.status === 401) {
+      return "Your UCMB session has expired. Please sign in again before connecting DHIS2.";
+    }
+    if (response?.data?.detail) {
+      return response.data.detail;
+    }
+  }
+  return fallback;
+}
+
 export function SettingsPage() {
   const { user } = useAuth();
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -24,6 +40,7 @@ export function SettingsPage() {
   const [dhis2Status, setDhis2Status] = useState<Dhis2ConnectionStatus | null>(null);
   const [checkingDhis2, setCheckingDhis2] = useState(false);
   const [dhis2Login, setDhis2Login] = useState({ base_url: "", username: "", password: "" });
+  const [dhis2Error, setDhis2Error] = useState<string | null>(null);
   const [dhis2SigningIn, setDhis2SigningIn] = useState(false);
   const [dhis2SigningOut, setDhis2SigningOut] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -58,9 +75,15 @@ export function SettingsPage() {
 
   const testDhis2Connection = async () => {
     setCheckingDhis2(true);
+    setDhis2Error(null);
     try {
       const status = await dhis2Service.getConnectionStatus();
       setDhis2Status(status);
+      if (!status.connected) {
+        setDhis2Error(status.message);
+      }
+    } catch (error) {
+      setDhis2Error(readApiError(error, "Unable to test DHIS2 connection."));
     } finally {
       setCheckingDhis2(false);
     }
@@ -68,7 +91,12 @@ export function SettingsPage() {
 
   const signInToDhis2 = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (user?.role !== "MANAGER") {
+      setDhis2Error("Only manager accounts can sign in to DHIS2 for backend sync.");
+      return;
+    }
     setDhis2SigningIn(true);
+    setDhis2Error(null);
     try {
       const status = await dhis2Service.login({
         base_url: dhis2Login.base_url || null,
@@ -77,6 +105,11 @@ export function SettingsPage() {
       });
       setDhis2Status(status);
       setDhis2Login((current) => ({ ...current, password: "" }));
+      if (!status.connected) {
+        setDhis2Error(status.message);
+      }
+    } catch (error) {
+      setDhis2Error(readApiError(error, "Unable to sign in to DHIS2."));
     } finally {
       setDhis2SigningIn(false);
     }
@@ -84,10 +117,13 @@ export function SettingsPage() {
 
   const signOutFromDhis2 = async () => {
     setDhis2SigningOut(true);
+    setDhis2Error(null);
     try {
       const status = await dhis2Service.logout();
       setDhis2Status(status);
       setDhis2Login((current) => ({ ...current, password: "" }));
+    } catch (error) {
+      setDhis2Error(readApiError(error, "Unable to sign out of DHIS2."));
     } finally {
       setDhis2SigningOut(false);
     }
@@ -188,6 +224,11 @@ export function SettingsPage() {
               <p className="mt-2 text-sm text-brand-muted">
                 {dhis2Status?.message ?? "Managers must sign in to DHIS2 here before live search, import, and auto-pull can run."}
               </p>
+              {dhis2Error ? (
+                <p className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-brand-danger">
+                  {dhis2Error}
+                </p>
+              ) : null}
               {dhis2Status?.last_checked_at ? (
                 <p className="mt-1 text-xs text-brand-muted">Last checked: {new Date(dhis2Status.last_checked_at).toLocaleString()}</p>
               ) : null}
@@ -202,52 +243,69 @@ export function SettingsPage() {
         </Card>
 
         <Card title="DHIS2 manager sign-in" subtitle="Use a DHIS2 account with permission to read organisation units, data elements, and analytics.">
-          <form className="space-y-4" onSubmit={(event) => void signInToDhis2(event)}>
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
+          {user?.role === "MANAGER" ? (
+            <form className="space-y-4" onSubmit={(event) => void signInToDhis2(event)}>
+              <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
+                <div className="flex items-center gap-3 text-brand-teal">
+                  <KeyRound size={18} />
+                  <p className="text-sm font-semibold text-brand-text">DHIS2 credentials are not stored in the browser</p>
+                </div>
+                <p className="mt-2 text-sm text-brand-muted">
+                  The password is sent once to the FastAPI backend over your signed-in UCMB session. The backend keeps an active DHIS2 session in server memory for API calls and clears the password from this form after sign-in.
+                </p>
+              </div>
+              {dhis2Error ? (
+                <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-brand-danger">
+                  {dhis2Error}
+                </p>
+              ) : null}
+              <label className="block">
+                <span className="text-sm font-semibold text-brand-text">DHIS2 base URL</span>
+                <input
+                  className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                  value={dhis2Login.base_url}
+                  onChange={(event) => setDhis2Login((current) => ({ ...current, base_url: event.target.value }))}
+                  placeholder="https://hmis.health.go.ug/api"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-brand-text">DHIS2 username</span>
+                <input
+                  className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                  value={dhis2Login.username}
+                  onChange={(event) => setDhis2Login((current) => ({ ...current, username: event.target.value }))}
+                  autoComplete="username"
+                  placeholder="Your DHIS2 username"
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-brand-text">DHIS2 password</span>
+                <input
+                  type="password"
+                  className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                  value={dhis2Login.password}
+                  onChange={(event) => setDhis2Login((current) => ({ ...current, password: event.target.value }))}
+                  autoComplete="current-password"
+                  placeholder="Your DHIS2 password"
+                  required
+                />
+              </label>
+              <Button type="submit" disabled={dhis2SigningIn || !dhis2Login.username || !dhis2Login.password}>
+                {dhis2SigningIn ? "Signing in..." : "Sign in to DHIS2"}
+              </Button>
+            </form>
+          ) : (
+            <div className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-4">
               <div className="flex items-center gap-3 text-brand-teal">
                 <KeyRound size={18} />
-                <p className="text-sm font-semibold text-brand-text">DHIS2 credentials are not stored in the browser</p>
+                <p className="text-sm font-semibold text-brand-text">Manager access required</p>
               </div>
               <p className="mt-2 text-sm text-brand-muted">
-                The password is sent once to the FastAPI backend over your signed-in UCMB session. The backend keeps an active DHIS2 session in server memory for API calls and clears the password from this form after sign-in.
+                DHIS2 sign-in is only available to manager accounts. Assessment team, reviewer, and viewer accounts cannot connect DHIS2 credentials.
               </p>
             </div>
-            <label className="block">
-              <span className="text-sm font-semibold text-brand-text">DHIS2 base URL</span>
-              <input
-                className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-                value={dhis2Login.base_url}
-                onChange={(event) => setDhis2Login((current) => ({ ...current, base_url: event.target.value }))}
-                placeholder="https://hmis.health.go.ug/api"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-semibold text-brand-text">DHIS2 username</span>
-              <input
-                className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-                value={dhis2Login.username}
-                onChange={(event) => setDhis2Login((current) => ({ ...current, username: event.target.value }))}
-                autoComplete="username"
-                placeholder="Your DHIS2 username"
-                required
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-semibold text-brand-text">DHIS2 password</span>
-              <input
-                type="password"
-                className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-                value={dhis2Login.password}
-                onChange={(event) => setDhis2Login((current) => ({ ...current, password: event.target.value }))}
-                autoComplete="current-password"
-                placeholder="Your DHIS2 password"
-                required
-              />
-            </label>
-            <Button type="submit" disabled={dhis2SigningIn || !dhis2Login.username || !dhis2Login.password}>
-              {dhis2SigningIn ? "Signing in..." : "Sign in to DHIS2"}
-            </Button>
-          </form>
+          )}
         </Card>
 
         <Card title="Configuration boundaries" subtitle="Sensitive credentials stay outside frontend API responses and browser storage.">
