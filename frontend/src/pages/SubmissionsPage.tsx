@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, Eye, PlayCircle, RefreshCcw, X } from "lucide-react";
+import { Download, Eye, FileText, PlayCircle, RefreshCcw, Sparkles, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Table } from "../components/ui/Table";
 import { assessmentRoundService } from "../services/assessmentRoundService";
 import { comparisonService } from "../services/comparisonService";
+import { exportService } from "../services/exportService";
+import { reportService } from "../services/reportService";
 import { submissionService } from "../services/submissionService";
 import type {
   AssessmentRoundListItem,
+  ReportType,
   SubmissionDashboard,
   SubmissionDetail,
   SubmissionListItem,
@@ -41,6 +45,7 @@ function DiffPill({ value }: { value: number | null }) {
 }
 
 export function SubmissionsPage() {
+  const navigate = useNavigate();
   const [rounds, setRounds] = useState<AssessmentRoundListItem[]>([]);
   const [selectedRoundId, setSelectedRoundId] = useState("");
   const [selectedTeamLeadId, setSelectedTeamLeadId] = useState("");
@@ -49,6 +54,9 @@ export function SubmissionsPage() {
   const [cumulativeDetails, setCumulativeDetails] = useState<SubmissionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [reportType, setReportType] = useState<ReportType>("CONSOLIDATED_UCMB_DQA_REPORT");
+  const [includeComments, setIncludeComments] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = async (roundId = selectedRoundId, teamLeadId = selectedTeamLeadId) => {
@@ -236,6 +244,35 @@ export function SubmissionsPage() {
       dhisReg: pct(value.register_value, value.dhis2_value_at_assessment),
     })),
   );
+  const selectedRound = rounds.find((round) => round.id === selectedRoundId) ?? null;
+  const canGenerateRoundReport = Boolean(selectedRoundId);
+
+  const handleGenerateReport = async (downloadDocx = false) => {
+    if (!selectedRoundId) {
+      setMessage("Select one assessment round before generating a report.");
+      return;
+    }
+    setGeneratingReport(true);
+    setMessage(null);
+    try {
+      const report = await reportService.generateReport({
+        assessment_round_id: selectedRoundId,
+        assessment_facility_id: null,
+        report_type: reportType,
+        include_comments: includeComments,
+      });
+      setMessage(downloadDocx ? "Report generated. Opening Word download..." : "Report generated. Opening report review page...");
+      if (downloadDocx) {
+        await reportService.reviewReport(report.id).catch(() => undefined);
+        await reportService.approveReport(report.id).catch(() => undefined);
+        await exportService.downloadDocx(report.id);
+      } else {
+        navigate(`/reports/${report.id}`);
+      }
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -267,6 +304,65 @@ export function SubmissionsPage() {
           </div>
         </div>
       </section>
+
+      <Card
+        title="Generate AI Word report"
+        subtitle="Use DeepSeek to generate a professional report from the submitted data in this selected assessment round."
+      >
+        <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-end">
+          <div className="grid gap-4 md:grid-cols-3">
+            <label>
+              <span className="mb-2 block text-sm font-semibold text-brand-text">Report type</span>
+              <select
+                className="w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                value={reportType}
+                onChange={(event) => setReportType(event.target.value as ReportType)}
+              >
+                <option value="CONSOLIDATED_UCMB_DQA_REPORT">Consolidated UCMB DQA Report</option>
+                <option value="EXECUTIVE_SUMMARY">Executive Summary</option>
+                <option value="CORRECTIVE_ACTION_REPORT">Corrective Action Report</option>
+              </select>
+            </label>
+            <div className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-muted">Selected round</p>
+              <p className="mt-1 text-sm font-semibold text-brand-text">
+                {selectedRound ? `${selectedRound.assessment_code} - ${selectedRound.name}` : "Select an assessment round above"}
+              </p>
+            </div>
+            <label className="flex items-start gap-3 rounded-2xl border border-brand-border bg-white px-4 py-3">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={includeComments}
+                onChange={(event) => setIncludeComments(event.target.checked)}
+              />
+              <span>
+                <span className="block text-sm font-semibold text-brand-text">Include comments</span>
+                <span className="mt-1 block text-xs text-brand-muted">Off by default for privacy and clean reporting.</span>
+              </span>
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              className="gap-2"
+              disabled={!canGenerateRoundReport || generatingReport}
+              onClick={() => void handleGenerateReport(false)}
+            >
+              <Sparkles size={16} />
+              {generatingReport ? "Generating..." : "Generate and review"}
+            </Button>
+            <Button
+              className="gap-2"
+              disabled={!canGenerateRoundReport || generatingReport}
+              onClick={() => void handleGenerateReport(true)}
+            >
+              <FileText size={16} />
+              Generate Word report
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <Card title="Filter submissions" subtitle="Each facility is tied to one shared group account. Select a group account to view only that group's facilities and statistics.">
         <div className="grid gap-4 lg:grid-cols-2">
