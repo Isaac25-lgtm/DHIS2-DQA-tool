@@ -172,8 +172,8 @@ DHIS2_BASE_URL=https://hmis.health.go.ug/api
 DHIS2_USERNAME=
 DHIS2_PASSWORD=
 AI_API_KEY=
-AI_PROVIDER=
-AI_MODEL=
+AI_PROVIDER=deepseek
+AI_MODEL=deepseek-v4-pro
 CORS_ORIGINS=http://localhost:5173
 DEFAULT_MANAGER_NAME=System Manager
 DEFAULT_MANAGER_EMAIL=admin@ucmb-dqa.local
@@ -435,6 +435,20 @@ Supported targets:
 - Railway
 - VPS
 - institutional server
+
+## AI Provider
+
+The report generator supports deterministic template fallback plus live AI generation.
+
+For DeepSeek:
+
+```env
+AI_PROVIDER=deepseek
+AI_MODEL=deepseek-v4-pro
+AI_API_KEY=your-deepseek-api-key
+```
+
+The backend calls DeepSeek's chat-completions API server-side only. The API key is never exposed through frontend system-info responses.
 
 This repo includes `render.yaml` for a Render Blueprint with:
 

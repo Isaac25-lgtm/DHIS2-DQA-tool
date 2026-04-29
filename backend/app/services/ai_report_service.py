@@ -82,6 +82,37 @@ def _invoke_openai_report_generation(structured_input: dict, *, model: str, api_
     raise ValueError("AI provider returned no usable report text.")
 
 
+def _invoke_deepseek_report_generation(structured_input: dict, *, model: str, api_key: str) -> str:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(structured_input, ensure_ascii=True)},
+        ],
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "high",
+        "temperature": 0.2,
+    }
+    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+        response = client.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+    raise ValueError("DeepSeek returned no usable report text.")
+
+
 def generate_report(db: Session, payload: ReportGenerateRequest, current_user: User) -> Report:
     settings = get_settings()
     title, structured_input = prepare_report_structured_input(db, payload, current_user)
@@ -93,11 +124,25 @@ def generate_report(db: Session, payload: ReportGenerateRequest, current_user: U
     log_error: str | None = None
     log_output: str | None = None
 
-    if settings.ai_api_key and (settings.ai_provider or "").lower() == "openai":
+    provider = (settings.ai_provider or "").lower()
+    if settings.ai_api_key and provider == "openai":
         try:
             generated_content = _invoke_openai_report_generation(
                 structured_input,
                 model=settings.ai_model or "gpt-5.4-mini",
+                api_key=settings.ai_api_key,
+            )
+            ai_status = AiGenerationLogStatus.SUCCESS
+            log_output = generated_content
+        except Exception as exc:  # pragma: no cover - network/provider branch
+            generated_content = build_template_report(payload.report_type, title, structured_input)
+            ai_status = AiGenerationLogStatus.FAILED
+            log_error = str(exc)
+    elif settings.ai_api_key and provider == "deepseek":
+        try:
+            generated_content = _invoke_deepseek_report_generation(
+                structured_input,
+                model=settings.ai_model or "deepseek-v4-pro",
                 api_key=settings.ai_api_key,
             )
             ai_status = AiGenerationLogStatus.SUCCESS
