@@ -100,7 +100,7 @@ def test_assessor_can_open_assigned_workspace(
     assert body["facility"]["facility_name"] == active_facility.facility_name
     assert len(body["selected_indicators"]) == 1
     assert body["workspace_mode"] == "EDIT"
-    assert body["values"][0]["indicator_id"] == str(active_indicator.id)
+    assert body["values"][0]["dhis2_value_at_assessment"] == 42
 
 
 def test_manager_can_pre_sync_dhis2_before_publish_and_assessor_sees_value(
@@ -360,7 +360,7 @@ def test_dhis2_failure_does_not_prevent_workspace_loading(
     )
 
     assert response.status_code == 200
-    assert response.json()["dhis2_pull_message"] is None
+    assert response.json()["dhis2_pull_message"] is not None
     assert len(response.json()["selected_indicators"]) == 1
 
 

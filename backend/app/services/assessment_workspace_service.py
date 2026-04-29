@@ -409,6 +409,8 @@ def submit_assessment(db: Session, assessment_facility: AssessmentFacility, curr
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned shared group login can submit this assessment unless submit permission is granted.",
         )
+    if any(value.dhis2_value_at_assessment is None for value in assessment_facility.dqa_values):
+        pull_dhis2_values_for_assessment(db, assessment_facility, triggered_by_user=current_user)
 
     required_indicator_ids = {
         item.indicator_id

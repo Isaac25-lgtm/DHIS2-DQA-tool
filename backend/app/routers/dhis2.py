@@ -25,7 +25,7 @@ def login_to_dhis2(
     payload: Dhis2LoginRequest,
     request: Request,
     db: DbSession,
-    current_user: User = Depends(require_roles(UserRole.MANAGER)),
+    current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.ASSESSOR)),
 ) -> Dhis2ConnectionStatus:
     status_response = sign_in_to_dhis2(
         base_url=payload.base_url,
@@ -35,7 +35,7 @@ def login_to_dhis2(
     log_audit_event(
         db,
         actor_user_id=current_user.id,
-        action="dhis2_manager_signed_in" if status_response.connected else "dhis2_manager_sign_in_failed",
+        action="dhis2_user_signed_in" if status_response.connected else "dhis2_user_sign_in_failed",
         entity_type="dhis2",
         description=status_response.message,
         request=request,
@@ -48,16 +48,16 @@ def login_to_dhis2(
 def logout_from_dhis2(
     request: Request,
     db: DbSession,
-    current_user: User = Depends(require_roles(UserRole.MANAGER)),
+    current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.ASSESSOR)),
 ) -> Dhis2ConnectionStatus:
     clear_dhis2_session()
     status_response = check_dhis2_connection()
     log_audit_event(
         db,
         actor_user_id=current_user.id,
-        action="dhis2_manager_signed_out",
+        action="dhis2_user_signed_out",
         entity_type="dhis2",
-        description="Manager signed out of the active DHIS2 backend session.",
+        description="User signed out of the active DHIS2 backend session.",
         request=request,
     )
     db.commit()
@@ -68,7 +68,7 @@ def logout_from_dhis2(
 def get_dhis2_connection_status(
     request: Request,
     db: DbSession,
-    current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.REVIEWER)),
+    current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.REVIEWER, UserRole.ASSESSOR)),
 ) -> Dhis2ConnectionStatus:
     status_response = check_dhis2_connection()
     log_audit_event(

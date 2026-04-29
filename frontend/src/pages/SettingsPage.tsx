@@ -19,7 +19,7 @@ function readApiError(error: unknown, fallback: string) {
   if (error && typeof error === "object" && "response" in error) {
     const response = (error as { response?: { status?: number; data?: { detail?: string } } }).response;
     if (response?.status === 403) {
-      return "Only manager accounts can sign in to DHIS2. Sign out and log back in as a manager.";
+      return "Only manager or assessor accounts can sign in to DHIS2. Sign out and log back in with an assessment account.";
     }
     if (response?.status === 401) {
       return "Your UCMB session has expired. Please sign in again before connecting DHIS2.";
@@ -93,8 +93,8 @@ export function SettingsPage() {
 
   const signInToDhis2 = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (user?.role !== "MANAGER") {
-      setDhis2Error("Only manager accounts can sign in to DHIS2 for backend sync.");
+    if (user?.role !== "MANAGER" && user?.role !== "ASSESSOR") {
+      setDhis2Error("Only manager or assessor accounts can sign in to DHIS2 for backend sync.");
       return;
     }
     setDhis2SigningIn(true);
@@ -254,7 +254,7 @@ export function SettingsPage() {
                 ) : null}
               </dd>
               <p className="mt-2 text-sm text-brand-muted">
-                {dhis2Status?.message ?? "Managers must sign in to DHIS2 here before live search, import, and auto-pull can run."}
+                {dhis2Status?.message ?? "Managers or assessors can sign in to DHIS2 here before live search, import, and assessment auto-pull can run."}
               </p>
               {dhis2Error ? (
                 <p className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-brand-danger">
@@ -274,8 +274,8 @@ export function SettingsPage() {
           </dl>
         </Card>
 
-        <Card title="DHIS2 manager sign-in" subtitle="Use a DHIS2 account with permission to read organisation units, data elements, and analytics.">
-          {user?.role === "MANAGER" ? (
+        <Card title="DHIS2 sign-in" subtitle="Managers and assessment teams can use a DHIS2 account with permission to read analytics values.">
+          {user?.role === "MANAGER" || user?.role === "ASSESSOR" ? (
             <form className="space-y-4" onSubmit={(event) => void signInToDhis2(event)}>
               <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
                 <div className="flex items-center gap-3 text-brand-teal">
@@ -283,7 +283,7 @@ export function SettingsPage() {
                   <p className="text-sm font-semibold text-brand-text">DHIS2 credentials are not stored in the browser</p>
                 </div>
                 <p className="mt-2 text-sm text-brand-muted">
-                  The password is sent once to the FastAPI backend over your signed-in UCMB session. The backend keeps an active DHIS2 session in server memory for API calls and clears the password from this form after sign-in.
+                  The password is sent once to the FastAPI backend over your signed-in UCMB session. The backend keeps an active DHIS2 session in server memory for API calls, clears the password from this form after sign-in, and can auto-fill DHIS2 values when an assessor opens an assigned workspace.
                 </p>
               </div>
               {dhis2Error ? (
@@ -331,10 +331,10 @@ export function SettingsPage() {
             <div className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-4">
               <div className="flex items-center gap-3 text-brand-teal">
                 <KeyRound size={18} />
-                <p className="text-sm font-semibold text-brand-text">Manager access required</p>
+                <p className="text-sm font-semibold text-brand-text">Manager or assessor access required</p>
               </div>
               <p className="mt-2 text-sm text-brand-muted">
-                DHIS2 sign-in is only available to manager accounts. Assessment team, reviewer, and viewer accounts cannot connect DHIS2 credentials.
+                DHIS2 sign-in is available to manager and assessor accounts. Reviewer and viewer accounts cannot connect DHIS2 credentials.
               </p>
             </div>
           )}
@@ -349,11 +349,13 @@ export function SettingsPage() {
               </p>
             </div>
             <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <p className="text-sm font-semibold text-brand-text">Manager-only configuration</p>
+              <p className="text-sm font-semibold text-brand-text">Manager and assessor DHIS2 sync</p>
               <p className="mt-2 text-sm text-brand-muted">
                 {user?.role === "MANAGER"
-                  ? "Dedicated editable configuration screens can be added later without exposing secrets here."
-                  : "Editable environment configuration remains manager-only and is intentionally not exposed in this page."}
+                  ? "Managers can sign in for setup, pre-sync, import, and review workflows."
+                  : user?.role === "ASSESSOR"
+                    ? "Assessors can sign in so their assigned workspace pulls DHIS2 values before data entry and submission."
+                    : "Editable environment configuration remains manager-only and DHIS2 sign-in remains limited to manager and assessor accounts."}
               </p>
             </div>
           </div>

@@ -111,7 +111,7 @@ def check_dhis2_connection() -> Dhis2ConnectionStatus:
             signed_in=False,
             base_url=base_url,
             last_checked_at=checked_at,
-            message="DHIS2 is not signed in. A manager must sign in to DHIS2 from Settings.",
+            message="DHIS2 is not signed in. A manager or assessor must sign in to DHIS2 from Settings.",
         )
 
     try:
@@ -377,7 +377,7 @@ def fetch_dhis2_values(
                 identifier,
                 status=DHIS2_NOT_CONFIGURED,
                 extracted_at=extracted_at,
-                error_message="DHIS2 is not signed in. A manager must sign in to DHIS2 from Settings.",
+                error_message="DHIS2 is not signed in. A manager or assessor must sign in to DHIS2 from Settings.",
             )
             for identifier in identifiers
         }
