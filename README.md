@@ -169,6 +169,8 @@ TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ucmb_dqa_test
 SECRET_KEY=change-this-secret
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 DHIS2_BASE_URL=https://hmis.health.go.ug/api
+DHIS2_USERNAME=
+DHIS2_PASSWORD=
 AI_API_KEY=
 AI_PROVIDER=
 AI_MODEL=
@@ -209,15 +211,17 @@ This seeds the confirmed UCMB HMIS 105 mappings stored in:
 
 DHIS2 credentials are not hard-coded in source code and are not stored in frontend/browser storage.
 
-Configure only the DHIS2 base URL in backend environment:
+Configure the DHIS2 base URL in the backend environment:
 
 ```env
 DHIS2_BASE_URL=https://hmis.health.go.ug/api
 ```
 
+Optionally set `DHIS2_USERNAME` and `DHIS2_PASSWORD` server-side if this local or deployed backend should keep DHIS2 sync available after process restarts. If those are blank, a manager must sign in from Settings after every backend restart before live DHIS2 search, import, or pre-sync can run.
+
 After signing into the UCMB DQA Platform, a Manager opens Settings and signs into DHIS2 using their DHIS2 username and password. The password is sent to FastAPI over the authenticated UCMB session, verified against DHIS2, and kept only in server memory for backend DHIS2 API calls.
 
-The active DHIS2 session is cleared when the manager signs out of DHIS2 or when the backend process restarts. A manager must sign in again before live DHIS2 search, import, or auto-pull can run.
+The active DHIS2 session is cleared when the manager signs out of DHIS2 or when the backend process restarts. If no server-side DHIS2 username/password is configured, a manager must sign in again before live DHIS2 search, import, or pre-sync can run.
 
 DHIS2 behavior:
 
@@ -226,7 +230,7 @@ DHIS2 behavior:
 - managers can search DHIS2 organisation units and import facilities into the local registry
 - managers can search DHIS2 data elements and import indicators into the local library
 - existing DHIS2 operands remain supported; a richer live category option combo picker is a future refinement for cases where managers must choose exact category options
-- workspace opens trigger server-side field-time pulls
+- managers pre-sync DHIS2 values before publishing so assessors open assignments with the system figures already available
 - both simple UIDs and operands are supported
 - `dhis2_value_at_assessment` is the authoritative DQA comparison value
 - later refresh values can be stored separately without replacing the field-time pull

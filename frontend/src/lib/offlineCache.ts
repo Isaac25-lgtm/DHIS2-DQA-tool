@@ -30,6 +30,7 @@ export async function saveCachedAssessment(
     facility_details: payload.facility,
     selected_indicators: payload.selected_indicators,
     source_document_requirements: payload.source_document_requirements,
+    values: payload.values,
     status: payload.status,
     deadline: payload.deadline,
     fetched_at: new Date().toISOString(),

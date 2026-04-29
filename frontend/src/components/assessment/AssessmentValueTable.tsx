@@ -37,6 +37,25 @@ function DifferenceCell({ value }: { value: number | null }) {
   );
 }
 
+function dhis2StatusText(value: DqaValue) {
+  if (value.dhis2_value_at_assessment !== null && value.dhis2_value_at_assessment !== undefined) {
+    if (value.dhis2_api_status === "ERROR" || value.dhis2_api_status === "NOT_CONFIGURED") {
+      return "Manager synced earlier; latest retry failed";
+    }
+    return "Manager synced";
+  }
+  if (value.dhis2_api_status === "NOT_CONFIGURED") {
+    return "DHIS2 setup missing";
+  }
+  if (value.dhis2_api_status === "ERROR") {
+    return "Sync failed, value preserved if previously synced";
+  }
+  if (value.dhis2_api_status === "NO_DATA") {
+    return "No DHIS2 data returned";
+  }
+  return "Waiting for manager sync";
+}
+
 function fallbackValue(indicatorId: string): DqaValue {
   return {
     id: indicatorId,
@@ -154,6 +173,7 @@ export function AssessmentValueTable({
                   <td className="px-4 py-4 align-top">
                     <Input
                       type="number"
+                      inputMode="numeric"
                       min={0}
                       value={toDisplayNumber(currentValue.register_value)}
                       onChange={(event) =>
@@ -162,12 +182,13 @@ export function AssessmentValueTable({
                         })
                       }
                       disabled={disabled}
-                      className="font-mono text-base"
+                      className="bg-emerald-50 font-mono-ui text-lg font-bold text-emerald-950 placeholder:text-emerald-900/40"
                     />
                   </td>
                   <td className="px-4 py-4 align-top">
                     <Input
                       type="number"
+                      inputMode="numeric"
                       min={0}
                       value={toDisplayNumber(currentValue.hmis105_value)}
                       onChange={(event) =>
@@ -176,14 +197,17 @@ export function AssessmentValueTable({
                         })
                       }
                       disabled={disabled}
-                      className="font-mono text-base"
+                      className="border-2 border-sky-300 bg-sky-50 font-mono-ui text-lg font-bold text-sky-950 shadow-inner placeholder:text-sky-900/40 focus:border-sky-500 focus:ring-sky-200"
                     />
                   </td>
                   <td className="border-l-2 border-emerald-200 bg-emerald-50/45 px-4 py-4 align-top">
-                    <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-center font-mono-ui text-sm font-semibold text-emerald-700">
+                    <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-center font-mono-ui text-lg font-bold text-emerald-800">
                       {currentValue.dhis2_value_at_assessment ?? "-"}
                     </div>
-                    <p className="mt-1 text-center text-[10px] font-semibold text-emerald-700">Auto from DHIS2</p>
+                    <p className="mt-1 text-center text-[10px] font-semibold text-emerald-700">{dhis2StatusText(currentValue)}</p>
+                    {currentValue.dhis2_error_message ? (
+                      <p className="mt-1 max-w-40 text-center text-[10px] text-brand-danger">{currentValue.dhis2_error_message}</p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-4 align-top">
                     <DifferenceCell value={differenceSummary.registerHmisPercentDiff} />
@@ -231,6 +255,7 @@ export function AssessmentValueTable({
                   <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-muted">Register Value</span>
                   <Input
                     type="number"
+                    inputMode="numeric"
                     min={0}
                     value={toDisplayNumber(currentValue.register_value)}
                     onChange={(event) =>
@@ -239,12 +264,14 @@ export function AssessmentValueTable({
                       })
                     }
                     disabled={disabled}
+                    className="bg-emerald-50 font-mono-ui text-lg font-bold text-emerald-950"
                   />
                 </label>
                 <label className="space-y-1">
                   <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-muted">HMIS 105 Value</span>
                   <Input
                     type="number"
+                    inputMode="numeric"
                     min={0}
                     value={toDisplayNumber(currentValue.hmis105_value)}
                     onChange={(event) =>
@@ -253,6 +280,7 @@ export function AssessmentValueTable({
                       })
                     }
                     disabled={disabled}
+                    className="border-2 border-sky-300 bg-sky-50 font-mono-ui text-lg font-bold text-sky-950"
                   />
                 </label>
               </div>
@@ -260,6 +288,7 @@ export function AssessmentValueTable({
               <div className="mt-4 grid gap-3 rounded-[18px] bg-brand-surface px-3 py-3 text-sm text-brand-text sm:grid-cols-2">
                 <p className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2">
                   <span className="font-semibold text-emerald-800">DHIS2:</span> {currentValue.dhis2_value_at_assessment ?? "-"}
+                  <span className="mt-1 block text-xs text-emerald-700">{dhis2StatusText(currentValue)}</span>
                 </p>
                 <p><span className="font-semibold text-brand-navy">HMIS vs Register:</span> {formatPercentDiff(differenceSummary.registerHmisPercentDiff)}</p>
                 <p><span className="font-semibold text-brand-navy">DHIS2 vs HMIS 105:</span> {formatPercentDiff(differenceSummary.hmisDhis2PercentDiff)}</p>

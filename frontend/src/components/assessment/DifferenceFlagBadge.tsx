@@ -45,12 +45,29 @@ export function calculateDifferenceSummary(
   hmis105Value: number | null,
   dhis2Value: number | null,
 ): DifferenceSummary {
+  const registerHmisPercentDiff = percentDiff(registerValue, hmis105Value);
+  const hmisDhis2PercentDiff = percentDiff(hmis105Value, dhis2Value);
+  const registerDhis2PercentDiff = percentDiff(registerValue, dhis2Value);
+  const validDiffs = [registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff].filter(
+    (value): value is number => value !== null,
+  );
+
   if (registerValue === null || hmis105Value === null || dhis2Value === null) {
+    if (hasDeathOrHighRiskDifference(indicator, registerValue, hmis105Value, dhis2Value)) {
+      return {
+        registerHmisPercentDiff,
+        hmisDhis2PercentDiff,
+        registerDhis2PercentDiff,
+        maxPercentDiff: validDiffs.length ? Math.max(...validDiffs) : null,
+        label: "Critical",
+        tone: "danger",
+      };
+    }
     return {
-      registerHmisPercentDiff: null,
-      hmisDhis2PercentDiff: null,
-      registerDhis2PercentDiff: null,
-      maxPercentDiff: null,
+      registerHmisPercentDiff,
+      hmisDhis2PercentDiff,
+      registerDhis2PercentDiff,
+      maxPercentDiff: validDiffs.length ? Math.max(...validDiffs) : null,
       label: "Incomplete",
       tone: "neutral",
     };
@@ -77,13 +94,6 @@ export function calculateDifferenceSummary(
       tone: "success",
     };
   }
-
-  const registerHmisPercentDiff = percentDiff(registerValue, hmis105Value);
-  const hmisDhis2PercentDiff = percentDiff(hmis105Value, dhis2Value);
-  const registerDhis2PercentDiff = percentDiff(registerValue, dhis2Value);
-  const validDiffs = [registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff].filter(
-    (value): value is number => value !== null,
-  );
 
   if (validDiffs.length === 0) {
     return {

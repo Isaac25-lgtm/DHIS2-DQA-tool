@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-secret"
     access_token_expire_minutes: int = 60
     dhis2_base_url: str = "https://hmis.health.go.ug/api"
+    dhis2_username: str = ""
+    dhis2_password: str = ""
     ai_api_key: str = ""
     ai_provider: str = ""
     ai_model: str = ""

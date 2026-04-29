@@ -14,6 +14,7 @@ from app.models.base import AssessmentFacilityStatus, AssessmentRoundStatus, Ass
 from app.models.user import User
 from app.schemas.assessment_round import (
     AssessmentFacilityAssignRequest,
+    AssessmentRoundPackageDqaValue,
     AssessmentRoundPackageSummary,
     AssessmentRoundPackageResponse,
     MyAssessmentListItem,
@@ -26,7 +27,7 @@ from app.services.assessment_round_service import (
     serialize_selected_indicator,
 )
 from app.services.assessment_team_service import get_active_team_member
-from app.services.assessment_workspace_service import build_offline_cache_version
+from app.services.assessment_workspace_service import build_offline_cache_version, ensure_dqa_rows_exist
 
 
 def assign_assessors_to_facilities(
@@ -187,6 +188,14 @@ def get_assessment_package_for_assessor(
             detail="This assessment package is not available until the round is published.",
         )
 
+    ensure_dqa_rows_exist(db, assessment_facility)
+    ordered_indicator_ids = [item.indicator_id for item in assessment_round.selected_indicators]
+    value_order = {indicator_id: index for index, indicator_id in enumerate(ordered_indicator_ids)}
+    ordered_values = sorted(
+        assessment_facility.dqa_values,
+        key=lambda item: value_order.get(item.indicator_id, 9999),
+    )
+
     return AssessmentRoundPackageResponse(
         assessment_round=AssessmentRoundPackageSummary(
             id=assessment_round.id,
@@ -212,6 +221,7 @@ def get_assessment_package_for_assessor(
             item.model_copy()
             for item in serialize_round_response(assessment_round).source_document_requirements
         ],
+        values=[AssessmentRoundPackageDqaValue.model_validate(value) for value in ordered_values],
         status=assessment_facility.status,
         deadline=assessment_round.deadline,
         offline_cache_version=build_offline_cache_version(assessment_facility),

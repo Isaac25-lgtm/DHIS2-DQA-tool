@@ -34,7 +34,7 @@ def get_assessment_workspace(
     db: DbSession,
     current_user: CurrentUser,
 ) -> AssessmentWorkspaceResponse:
-    workspace = build_assessment_workspace_response(db, assessment_facility_id, current_user, refresh_dhis2=True)
+    workspace = build_assessment_workspace_response(db, assessment_facility_id, current_user, refresh_dhis2=False)
     log_audit_event(
         db,
         actor_user_id=current_user.id,
@@ -44,26 +44,6 @@ def get_assessment_workspace(
         description=f"Opened assessment workspace for assignment {assessment_facility_id}.",
         request=request,
     )
-    if workspace.dhis2_pull_message:
-        log_audit_event(
-            db,
-            actor_user_id=current_user.id,
-            action="dhis2_pull_failed",
-            entity_type="assessment_facility",
-            entity_id=assessment_facility_id,
-            description=f"DHIS2 pull failed or was unavailable for assignment {assessment_facility_id}.",
-            request=request,
-        )
-    elif workspace.workspace_mode == "EDIT":
-        log_audit_event(
-            db,
-            actor_user_id=current_user.id,
-            action="dhis2_pull_succeeded",
-            entity_type="assessment_facility",
-            entity_id=assessment_facility_id,
-            description=f"Pulled DHIS2 values for assignment {assessment_facility_id}.",
-            request=request,
-        )
     db.commit()
     return workspace
 

@@ -25,10 +25,14 @@ _DHIS2_ACTIVE_SESSION: dict[str, str] = {}
 
 
 def is_dhis2_configured() -> bool:
+    settings = get_settings()
     return bool(
-        _DHIS2_ACTIVE_SESSION.get("base_url")
-        and _DHIS2_ACTIVE_SESSION.get("username")
-        and _DHIS2_ACTIVE_SESSION.get("password")
+        (
+            _DHIS2_ACTIVE_SESSION.get("base_url")
+            and _DHIS2_ACTIVE_SESSION.get("username")
+            and _DHIS2_ACTIVE_SESSION.get("password")
+        )
+        or (settings.dhis2_base_url and settings.dhis2_username and settings.dhis2_password)
     )
 
 

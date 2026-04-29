@@ -43,6 +43,7 @@ READ_ONLY_STATUSES = {
     AssessmentFacilityStatus.APPROVED,
     AssessmentFacilityStatus.CLOSED,
 }
+PRESERVE_DHIS2_VALUE_STATUSES = {DHIS2_ERROR, DHIS2_NOT_CONFIGURED}
 
 
 def _workspace_query():
@@ -239,7 +240,7 @@ def pull_dhis2_values_for_assessment(
         ]
         if extracted_timestamps:
             extracted_at = max(extracted_timestamps)
-        if any(item.get("status") == DHIS2_ERROR for item in normalized_results.values()):
+        if any(item.get("status") in PRESERVE_DHIS2_VALUE_STATUSES for item in normalized_results.values()):
             dhis2_message = (
                 "DHIS2 values could not be pulled. You can continue entering register and HMIS 105 values."
             )
@@ -283,13 +284,13 @@ def pull_dhis2_values_for_assessment(
                 normalized_extracted_at = normalized.get("extracted_at")  # type: ignore[assignment]
                 normalized_value = normalized.get("value")
                 if latest_refresh:
-                    if normalized_status != DHIS2_ERROR:
+                    if normalized_status not in PRESERVE_DHIS2_VALUE_STATUSES:
                         dqa_value.dhis2_value_latest = normalized_value
                     dqa_value.dhis2_latest_api_status = normalized_status
                     dqa_value.dhis2_latest_error_message = normalized_error
                     dqa_value.dhis2_latest_extracted_at = normalized_extracted_at
                 else:
-                    if normalized_status != DHIS2_ERROR:
+                    if normalized_status not in PRESERVE_DHIS2_VALUE_STATUSES:
                         dqa_value.dhis2_value_at_assessment = normalized_value
                     dqa_value.dhis2_api_status = normalized_status
                     dqa_value.dhis2_error_message = normalized_error
@@ -313,7 +314,10 @@ def pull_dhis2_values_for_assessment(
     if not identifiers or not assessment_facility.facility.dhis2_org_unit_uid:
         extraction_status = DHIS2_NOT_CONFIGURED
         extraction_error = dhis2_message
-    elif any(item.status == DHIS2_ERROR for item in results):
+    elif any(item.status == DHIS2_NOT_CONFIGURED for item in results):
+        extraction_status = DHIS2_NOT_CONFIGURED
+        extraction_error = dhis2_message
+    elif any(item.status in PRESERVE_DHIS2_VALUE_STATUSES for item in results):
         extraction_status = DHIS2_ERROR
         extraction_error = dhis2_message
     elif all(item.status == DHIS2_NO_DATA for item in results):

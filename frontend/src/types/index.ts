@@ -315,6 +315,7 @@ export interface AssessmentRoundPackage {
   assigned_assessor: AuthUser | null;
   selected_indicators: SelectedIndicator[];
   source_document_requirements: SourceDocumentRequirement[];
+  values: DqaValue[];
   status: AssessmentFacilityStatus;
   deadline: string | null;
   offline_cache_version: string;
@@ -840,6 +841,7 @@ export interface CachedAssessmentPackage {
   facility_details: Facility;
   selected_indicators: SelectedIndicator[];
   source_document_requirements: SourceDocumentRequirement[];
+  values: DqaValue[];
   status: AssessmentFacilityStatus;
   deadline: string | null;
   fetched_at: string;

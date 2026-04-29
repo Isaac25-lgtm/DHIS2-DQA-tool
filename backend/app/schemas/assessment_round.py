@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.base import AssessmentFacilityStatus, AssessmentRoundStatus, PeriodType
+from app.models.base import (
+    AssessmentFacilityStatus,
+    AssessmentRoundStatus,
+    ComparisonStatus,
+    DqaIssueType,
+    DqaValueStatus,
+    PeriodType,
+    SeverityLevel,
+)
 from app.schemas.assessment_team import AssessmentTeamMemberResponse
 from app.schemas.facility import FacilityRead
 from app.schemas.user import TokenUser
@@ -220,12 +229,47 @@ class AssessmentRoundProgressResponse(BaseModel):
     by_status: dict[str, int]
 
 
+class AssessmentRoundPackageDqaValue(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    indicator_id: UUID
+    register_value: int | None
+    hmis105_value: int | None
+    dhis2_value_at_assessment: int | None
+    dhis2_extracted_at: datetime | None
+    dhis2_api_status: str | None
+    dhis2_error_message: str | None
+    dhis2_value_latest: int | None
+    dhis2_latest_extracted_at: datetime | None
+    dhis2_latest_api_status: str | None
+    dhis2_latest_error_message: str | None
+    assessor_comment: str | None
+    manager_comment: str | None
+    value_status: DqaValueStatus
+    register_vs_hmis_difference: int | None = None
+    hmis_vs_dhis2_difference: int | None = None
+    register_vs_dhis2_difference: int | None = None
+    absolute_discrepancy: int | None = None
+    discrepancy_percent: Decimal | None = None
+    verification_factor: Decimal | None = None
+    issue_type: DqaIssueType | None = None
+    severity: SeverityLevel | None = None
+    comparison_status: ComparisonStatus | None = None
+    comparison_notes: str | None = None
+    compared_at: datetime | None = None
+    compared_by_user_id: UUID | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class AssessmentRoundPackageResponse(BaseModel):
     assessment_round: AssessmentRoundPackageSummary
     facility: FacilityRead
     assigned_assessor: TokenUser | None
     selected_indicators: list[SelectedIndicatorResponse]
     source_document_requirements: list[SourceDocumentRequirementResponse]
+    values: list[AssessmentRoundPackageDqaValue] = Field(default_factory=list)
     status: AssessmentFacilityStatus
     deadline: date | None
     offline_cache_version: str
