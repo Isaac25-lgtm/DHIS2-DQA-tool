@@ -53,6 +53,30 @@ const stepTitles = [
 
 const periodTypeOptions: PeriodType[] = ["MONTHLY", "QUARTERLY", "ANNUAL", "CUSTOM"];
 
+function deriveReportingPeriod(periodType: PeriodType, startDate: string | null, endDate: string | null, fallback = "") {
+  if (!startDate) {
+    return fallback;
+  }
+  const [year, month] = startDate.split("-");
+  if (!year || !month) {
+    return fallback;
+  }
+  if (periodType === "MONTHLY") {
+    return `${year}${month}`;
+  }
+  if (periodType === "QUARTERLY") {
+    return `${year}Q${Math.ceil(Number(month) / 3)}`;
+  }
+  if (periodType === "ANNUAL") {
+    return year;
+  }
+  const compactStartDate = startDate.replace(/-/g, "");
+  if (endDate) {
+    return `${compactStartDate}-${endDate.replace(/-/g, "")}`;
+  }
+  return compactStartDate;
+}
+
 const emptyForm: AssessmentRoundPayload = {
   name: "",
   description: "",
@@ -554,7 +578,14 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
               <label className="mb-2 block text-sm font-semibold text-brand-text">Period type</label>
               <Select
                 value={form.period_type}
-                onChange={(event) => setForm({ ...form, period_type: event.target.value as PeriodType })}
+                onChange={(event) => {
+                  const periodType = event.target.value as PeriodType;
+                  setForm({
+                    ...form,
+                    period_type: periodType,
+                    reporting_period: deriveReportingPeriod(periodType, form.start_date, form.end_date, form.reporting_period),
+                  });
+                }}
               >
                 {periodTypeOptions.map((value) => (
                   <option key={value} value={value}>
@@ -566,23 +597,36 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
             <div className="rounded-2xl border border-brand-border bg-brand-surface p-4 md:col-span-2">
               <p className="text-sm font-semibold text-brand-text">Reporting period</p>
               <p className="mt-1 text-xs text-brand-muted">
-                The period label is used for DHIS2 pulls; the start and end dates define the assessment reporting window.
+                The DHIS2 period code is generated automatically from the dates and period type. You normally do not need to type it.
               </p>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-brand-text">Period label</label>
+                  <label className="mb-2 block text-sm font-semibold text-brand-text">DHIS2 period code</label>
                   <Input
-                    placeholder="Example: 2026-03"
+                    placeholder="Auto-generated, e.g. 202603"
                     value={form.reporting_period}
+                    readOnly={form.period_type !== "CUSTOM"}
                     onChange={(event) => setForm({ ...form, reporting_period: event.target.value })}
                   />
+                  <p className="mt-2 text-xs text-brand-muted">
+                    {form.period_type === "CUSTOM"
+                      ? "Custom periods are editable if DHIS2 requires a special code."
+                      : "Generated from the start date for DHIS2 syncing."}
+                  </p>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-brand-text">Start date</label>
                   <Input
                     type="date"
                     value={form.start_date ?? ""}
-                    onChange={(event) => setForm({ ...form, start_date: event.target.value || null })}
+                    onChange={(event) => {
+                      const startDate = event.target.value || null;
+                      setForm({
+                        ...form,
+                        start_date: startDate,
+                        reporting_period: deriveReportingPeriod(form.period_type, startDate, form.end_date, form.reporting_period),
+                      });
+                    }}
                   />
                 </div>
                 <div>
@@ -590,7 +634,14 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                   <Input
                     type="date"
                     value={form.end_date ?? ""}
-                    onChange={(event) => setForm({ ...form, end_date: event.target.value || null })}
+                    onChange={(event) => {
+                      const endDate = event.target.value || null;
+                      setForm({
+                        ...form,
+                        end_date: endDate,
+                        reporting_period: deriveReportingPeriod(form.period_type, form.start_date, endDate, form.reporting_period),
+                      });
+                    }}
                   />
                 </div>
               </div>
