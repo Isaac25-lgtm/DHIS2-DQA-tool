@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Cloud, MapPinned } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "../components/ui/Badge";
@@ -50,9 +50,11 @@ export function MyAssessmentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
+  const loadAssessments = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) {
+        setLoading(true);
+      }
       setError(null);
       try {
         if (isOnline) {
@@ -93,12 +95,27 @@ export function MyAssessmentsPage() {
       } catch {
         setError("Unable to load your assigned assessments right now.");
       } finally {
-        setLoading(false);
+        if (showLoading) {
+          setLoading(false);
+        }
       }
-    };
+    },
+    [isOnline],
+  );
 
-    void load();
-  }, [isOnline]);
+  useEffect(() => {
+    void loadAssessments(true);
+  }, [loadAssessments]);
+
+  useEffect(() => {
+    if (!isOnline) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      void loadAssessments(false);
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [isOnline, loadAssessments]);
 
   const visibleItems = useMemo(() => {
     return isOnline ? items : cachedItems;
@@ -191,7 +208,7 @@ export function MyAssessmentsPage() {
                   ) : null}
                   {item.my_team_role ? (
                     <Badge tone={item.my_team_role === "TEAM_LEAD" || item.my_team_role === "LEGACY_LEAD" ? "success" : "info"}>
-                      My team role: {item.my_team_role.replace(/_/g, " ")}
+                      Shared group access
                     </Badge>
                   ) : null}
                   {item.can_submit ? <Badge tone="success">Can submit</Badge> : null}

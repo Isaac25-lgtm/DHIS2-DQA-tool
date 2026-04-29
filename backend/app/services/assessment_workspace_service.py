@@ -403,7 +403,7 @@ def submit_assessment(db: Session, assessment_facility: AssessmentFacility, curr
     if not can_user_submit(assessment_facility, current_user.id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the Team Lead can submit this assessment unless submit permission is granted.",
+            detail="Only the assigned shared group login can submit this assessment unless submit permission is granted.",
         )
 
     required_indicator_ids = {

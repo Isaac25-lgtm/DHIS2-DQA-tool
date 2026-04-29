@@ -1,13 +1,15 @@
-import { Bell, LogOut, ShieldCheck, Wifi, WifiOff } from "lucide-react";
+import { Bell, LogOut, Moon, ShieldCheck, Sun, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
+import { useTheme } from "../../hooks/useTheme";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import {
   OFFLINE_STORE_EVENT,
   getFailedSyncCount,
   getPendingSyncCount,
 } from "../../services/offlineStore";
+import { BrandLogo } from "../ui/BrandLogo";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 
@@ -28,6 +30,7 @@ const pageTitles: Record<string, string> = {
 export function Topbar() {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const { isOnline } = useNetworkStatus();
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [failedSyncCount, setFailedSyncCount] = useState(0);
@@ -52,9 +55,12 @@ export function Topbar() {
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-brand-navy text-white shadow-panel">
       <div className="page-shell flex flex-col gap-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.26em] text-emerald-200">UCMB HMIS 105 Platform</p>
-          <h2 className="mt-1 font-display text-2xl font-semibold text-white">{currentTitle}</h2>
+        <div className="flex items-center gap-4">
+          <BrandLogo className="rounded-[20px] px-2 py-1.5 shadow-none" imageClassName="w-[150px]" />
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.26em] text-emerald-200">UCMB HMIS 105 Platform</p>
+            <h2 className="mt-1 font-display text-2xl font-semibold text-white">{currentTitle}</h2>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -73,6 +79,14 @@ export function Topbar() {
                 ? `${pendingSyncCount} pending sync`
                 : "Sync clear"}
           </Badge>
+          <Button
+            variant="secondary"
+            className="border-white/15 bg-white/10 text-white hover:bg-white/20"
+            onClick={toggleTheme}
+          >
+            {theme === "day" ? <Moon size={16} /> : <Sun size={16} />}
+            {theme === "day" ? "Night mode" : "Day mode"}
+          </Button>
           <button className="rounded-2xl border border-white/10 bg-white/10 p-3 text-white/75 shadow-sm transition hover:bg-white/20 hover:text-white">
             <Bell size={18} />
           </button>

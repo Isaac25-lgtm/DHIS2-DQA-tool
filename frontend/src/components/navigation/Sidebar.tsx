@@ -12,6 +12,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { hasAnyRole } from "../../lib/auth";
 import { cn } from "../../lib/cn";
 import type { UserRole } from "../../types";
+import { BrandLogo } from "../ui/BrandLogo";
 
 interface NavItem {
   to: string;
@@ -36,13 +37,11 @@ export function Sidebar() {
 
   return (
     <aside className="border-b border-white/10 bg-brand-blue text-white shadow-panel lg:sticky lg:top-0 lg:min-h-screen lg:w-64 lg:border-b-0 lg:border-r lg:border-white/10">
-      <div className="flex items-center gap-3 px-5 py-5 lg:px-6">
-        <div className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-brand-teal text-white shadow-panel">
-          <span className="font-mono-ui text-sm font-bold tracking-[0.2em]">UC</span>
-        </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.28em] text-emerald-200">UCMB Analytics</p>
-          <h1 className="text-base font-bold text-white">HMIS 105 DQA</h1>
+      <div className="px-5 py-5 lg:px-6">
+        <BrandLogo className="w-full rounded-[26px] p-3" imageClassName="w-full max-w-[210px]" />
+        <div className="mt-3">
+          <p className="text-[10px] uppercase tracking-[0.28em] text-emerald-200">Uganda Catholic Medical Bureau</p>
+          <h1 className="mt-1 text-base font-bold text-white">HMIS 105 DQA Platform</h1>
         </div>
       </div>
 

@@ -9,12 +9,12 @@ export function AssessmentSummaryCard({
   workspace: AssessmentWorkspace;
   missingRequiredCount: number;
 }) {
-  const teamLead =
+  const sharedGroupLogin =
     workspace.assessment_facility.team_members.find((member) => member.team_role === "TEAM_LEAD" && member.is_active)
       ?.user?.full_name ?? workspace.assessment_facility.assigned_assessor?.full_name ?? "Not assigned";
-  const teamMembers = workspace.assessment_facility.team_members
-    .filter((member) => member.team_role === "TEAM_MEMBER" && member.is_active)
-    .map((member) => member.user?.full_name ?? "Unnamed team member");
+  const sharedGroupEmail =
+    workspace.assessment_facility.team_members.find((member) => member.team_role === "TEAM_LEAD" && member.is_active)
+      ?.user?.email ?? workspace.assessment_facility.assigned_assessor?.email ?? "No shared email assigned";
   const dhis2Statuses = workspace.values.map((value) => value.dhis2_api_status ?? "NOT_PULLED");
   const hasDhis2Error = dhis2Statuses.some((status) => status === "ERROR" || status === "NOT_CONFIGURED");
   const hasDhis2Success = dhis2Statuses.some((status) => status === "SUCCESS");
@@ -82,12 +82,13 @@ export function AssessmentSummaryCard({
         <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <Users size={16} />
-            Field team
+            Shared group account
           </div>
-          <p className="mt-2 font-semibold text-brand-text">{teamLead}</p>
+          <p className="mt-2 font-semibold text-brand-text">{sharedGroupLogin}</p>
           <p className="mt-1 text-sm text-brand-muted">
-            {teamMembers.length > 0 ? teamMembers.join(", ") : "No team members listed"}
+            {sharedGroupEmail}
           </p>
+          <p className="mt-1 text-sm text-brand-muted">All group members use this same login for the assigned facilities.</p>
         </div>
 
         <div className="rounded-[18px] bg-brand-surface px-4 py-4">

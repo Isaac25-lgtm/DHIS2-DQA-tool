@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Database, HardDriveDownload, KeyRound, Link2, ShieldCheck } from "lucide-react";
+import { Database, HardDriveDownload, KeyRound, Link2, Moon, ShieldCheck, Sun } from "lucide-react";
 import { Card } from "../components/ui/Card";
 import { useAuth } from "../hooks/useAuth";
+import { useTheme } from "../hooks/useTheme";
 import {
   getFailedSyncCount,
   getPendingSyncCount,
@@ -32,6 +33,7 @@ function readApiError(error: unknown, fallback: string) {
 
 export function SettingsPage() {
   const { user } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [failedSyncCount, setFailedSyncCount] = useState(0);
@@ -169,10 +171,54 @@ export function SettingsPage() {
             </p>
           </div>
 
+          <div className="rounded-2xl bg-brand-surface px-5 py-5">
+            <div className="flex items-center gap-3 text-brand-teal">
+              {theme === "day" ? <Sun size={18} /> : <Moon size={18} />}
+              <p className="text-sm font-semibold text-brand-text">Display mode</p>
+            </div>
+            <p className="mt-3 text-3xl font-bold text-brand-navy">{theme === "day" ? "DAY" : "NIGHT"}</p>
+            <p className="mt-2 text-sm text-brand-muted">Switch modes from the top bar or choose one below.</p>
+          </div>
+
         </div>
       </Card>
 
       <section className="grid gap-6 xl:grid-cols-2">
+        <Card title="Theme" subtitle="Choose the display mode that feels best for your workspace.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              className={`rounded-2xl border px-4 py-4 text-left transition ${
+                theme === "day"
+                  ? "border-brand-teal bg-cyan-50 shadow-soft"
+                  : "border-brand-border bg-white"
+              }`}
+              onClick={() => setTheme("day")}
+            >
+              <div className="flex items-center gap-3 text-brand-teal">
+                <Sun size={18} />
+                <p className="text-sm font-semibold text-brand-text">Day mode</p>
+              </div>
+              <p className="mt-3 text-sm text-brand-muted">Bright panels and the default daytime workspace styling.</p>
+            </button>
+            <button
+              type="button"
+              className={`rounded-2xl border px-4 py-4 text-left transition ${
+                theme === "night"
+                  ? "border-brand-teal bg-cyan-50 shadow-soft"
+                  : "border-brand-border bg-white"
+              }`}
+              onClick={() => setTheme("night")}
+            >
+              <div className="flex items-center gap-3 text-brand-teal">
+                <Moon size={18} />
+                <p className="text-sm font-semibold text-brand-text">Night mode</p>
+              </div>
+              <p className="mt-3 text-sm text-brand-muted">Lower-glare surfaces for darker rooms and extended review sessions.</p>
+            </button>
+          </div>
+        </Card>
+
         <Card title="Runtime information" subtitle="Visible configuration that is safe to surface to signed-in users.">
           <dl className="space-y-4">
             <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">

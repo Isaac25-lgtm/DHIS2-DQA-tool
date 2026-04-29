@@ -535,6 +535,10 @@ export interface SubmissionValueRow {
   register_vs_hmis_difference: number | null;
   hmis_vs_dhis2_difference: number | null;
   register_vs_dhis2_difference: number | null;
+  register_hmis_percent_diff: number | null;
+  hmis_dhis2_percent_diff: number | null;
+  register_dhis2_percent_diff: number | null;
+  max_percent_diff: number | null;
   discrepancy_percent: number | null;
   issue_type: string | null;
   severity: string | null;

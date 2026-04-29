@@ -26,6 +26,7 @@ from app.services.assessment_round_service import (
     serialize_selected_indicator,
 )
 from app.services.assessment_team_service import get_active_team_member
+from app.services.assessment_workspace_service import build_offline_cache_version
 
 
 def assign_assessors_to_facilities(
@@ -160,6 +161,8 @@ def get_assessment_package_for_assessor(
             joinedload(AssessmentFacility.facility),
             joinedload(AssessmentFacility.assigned_assessor),
             selectinload(AssessmentFacility.team_members).joinedload(AssessmentFacilityTeamMember.user),
+            selectinload(AssessmentFacility.dqa_values),
+            selectinload(AssessmentFacility.source_document_checks),
             joinedload(AssessmentFacility.assessment_round),
         )
     )
@@ -183,10 +186,6 @@ def get_assessment_package_for_assessor(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This assessment package is not available until the round is published.",
         )
-
-    offline_cache_version = (
-        f"{assessment_round.updated_at.isoformat()}::{assessment_facility.updated_at.isoformat()}::{assessment_round.status.value}"
-    )
 
     return AssessmentRoundPackageResponse(
         assessment_round=AssessmentRoundPackageSummary(
@@ -215,5 +214,5 @@ def get_assessment_package_for_assessor(
         ],
         status=assessment_facility.status,
         deadline=assessment_round.deadline,
-        offline_cache_version=offline_cache_version,
+        offline_cache_version=build_offline_cache_version(assessment_facility),
     )

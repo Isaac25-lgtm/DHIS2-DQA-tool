@@ -16,7 +16,7 @@ export function Card({
   return (
     <section
       className={cn(
-        "rounded-[22px] border border-brand-border bg-white p-5 shadow-soft",
+        "rounded-[22px] border border-brand-border bg-white p-5 shadow-soft transition-colors",
         className,
       )}
       {...props}

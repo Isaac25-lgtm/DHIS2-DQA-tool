@@ -99,13 +99,11 @@ export function SubmissionsPage() {
       },
       {
         accessorKey: "team_lead",
-        header: "Team",
+        header: "Group account",
         cell: ({ row }) => (
           <div>
-            <p className="text-sm font-medium text-brand-text">{row.original.team_lead ?? "No Team Lead"}</p>
-            <p className="text-xs text-brand-muted">
-              {row.original.team_members.length ? row.original.team_members.join(", ") : "Team Lead only"}
-            </p>
+            <p className="text-sm font-medium text-brand-text">{row.original.team_lead ?? "No group account assigned"}</p>
+            <p className="text-xs text-brand-muted">Used by all members of that assigned group.</p>
           </div>
         ),
       },
@@ -270,7 +268,7 @@ export function SubmissionsPage() {
         </div>
       </section>
 
-      <Card title="Filter submissions" subtitle="Teams are named after their Team Lead. Select a Team Lead to view only that team's facilities and statistics.">
+      <Card title="Filter submissions" subtitle="Each facility is tied to one shared group account. Select a group account to view only that group's facilities and statistics.">
         <div className="grid gap-4 lg:grid-cols-2">
           <label>
             <span className="mb-2 block text-sm font-semibold text-brand-text">Assessment round</span>
@@ -292,7 +290,7 @@ export function SubmissionsPage() {
             </select>
           </label>
           <label>
-            <span className="mb-2 block text-sm font-semibold text-brand-text">Team Lead</span>
+            <span className="mb-2 block text-sm font-semibold text-brand-text">Group account</span>
             <select
               className="w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
               value={selectedTeamLeadId}
@@ -301,7 +299,7 @@ export function SubmissionsPage() {
                 setDetail(null);
               }}
             >
-              <option value="">All Team Leads</option>
+              <option value="">All group accounts</option>
               {(dashboard?.team_leads ?? []).map((lead) => (
                 <option key={lead.user_id} value={lead.user_id}>
                   {lead.full_name}
@@ -403,7 +401,7 @@ export function SubmissionsPage() {
               <div>
                 <h2 className="font-display text-2xl font-semibold">Reviewing: {detail.summary.facility_name}</h2>
                 <p className="mt-1 text-sm text-white/65">
-                  {detail.summary.team_lead ?? "No Team Lead"} - {detail.summary.completed_indicators}/{detail.summary.total_indicators} indicators completed
+                  {detail.summary.team_lead ?? "No group account assigned"} - {detail.summary.completed_indicators}/{detail.summary.total_indicators} indicators completed
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

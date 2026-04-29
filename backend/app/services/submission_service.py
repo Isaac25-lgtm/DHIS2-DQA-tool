@@ -99,9 +99,46 @@ def _team_lead_options(items: list[AssessmentFacility]) -> list[SubmissionTeamLe
     ]
 
 
+def _percent_diff(reference_value: int | None, comparison_value: int | None) -> float | None:
+    if reference_value is None or comparison_value is None:
+        return None
+    if reference_value == 0 and comparison_value == 0:
+        return 0.0
+    if reference_value == 0:
+        return None
+    return round(abs(comparison_value - reference_value) / abs(reference_value) * 100, 2)
+
+
+def _value_percentages(value: DqaValue | None) -> tuple[float | None, float | None, float | None, float | None]:
+    if value is None:
+        return None, None, None, None
+    register_hmis = _percent_diff(value.register_value, value.hmis105_value)
+    hmis_dhis2 = _percent_diff(value.hmis105_value, value.dhis2_value_at_assessment)
+    register_dhis2 = _percent_diff(value.register_value, value.dhis2_value_at_assessment)
+    valid = [item for item in (register_hmis, hmis_dhis2, register_dhis2) if item is not None]
+    return register_hmis, hmis_dhis2, register_dhis2, max(valid) if valid else None
+
+
+def _live_flag_for_value(value: DqaValue | None) -> str:
+    if value is None or value.register_value is None or value.hmis105_value is None or value.dhis2_value_at_assessment is None:
+        return "Incomplete"
+    if value.indicator and value.indicator.is_death_indicator:
+        values = [value.register_value, value.hmis105_value, value.dhis2_value_at_assessment]
+        if max(values) - min(values) >= 1:
+            return "Critical"
+    _, _, _, max_percent = _value_percentages(value)
+    if max_percent is None:
+        return "Flagged >5%"
+    if max_percent == 0:
+        return "Match"
+    if max_percent <= 5:
+        return "Within 5%"
+    return "Flagged >5%"
+
+
 def _flag_for_value(value: DqaValue | None) -> str:
     if value is None or value.severity is None:
-        return "Incomplete"
+        return _live_flag_for_value(value)
     if value.severity == SeverityLevel.EXACT:
         return "Match"
     if value.severity == SeverityLevel.MINOR:
@@ -163,6 +200,7 @@ def _serialize_submission_rows(assessment_facility: AssessmentFacility) -> list[
     rows: list[SubmissionValueRowResponse] = []
     for selected in sorted(assessment_facility.assessment_round.selected_indicators, key=lambda item: item.display_order):
         value = values_by_indicator.get(selected.indicator_id)
+        register_hmis_percent_diff, hmis_dhis2_percent_diff, register_dhis2_percent_diff, max_percent_diff = _value_percentages(value)
         rows.append(
             SubmissionValueRowResponse(
                 dqa_value_id=value.id if value else None,
@@ -176,6 +214,10 @@ def _serialize_submission_rows(assessment_facility: AssessmentFacility) -> list[
                 register_vs_hmis_difference=value.register_vs_hmis_difference if value else None,
                 hmis_vs_dhis2_difference=value.hmis_vs_dhis2_difference if value else None,
                 register_vs_dhis2_difference=value.register_vs_dhis2_difference if value else None,
+                register_hmis_percent_diff=register_hmis_percent_diff,
+                hmis_dhis2_percent_diff=hmis_dhis2_percent_diff,
+                register_dhis2_percent_diff=register_dhis2_percent_diff,
+                max_percent_diff=max_percent_diff,
                 discrepancy_percent=float(value.discrepancy_percent) if value and value.discrepancy_percent is not None else None,
                 issue_type=value.issue_type.value if value and value.issue_type else None,
                 severity=value.severity.value if value and value.severity else None,
@@ -293,8 +335,7 @@ def build_submissions_workbook(
         "Facility",
         "District",
         "Status",
-        "Team Lead",
-        "Team Members",
+        "Group Account",
         "Submitted At",
         "DQA Score",
         "Score Category",
@@ -312,7 +353,6 @@ def build_submissions_workbook(
             item.district,
             item.status,
             item.team_lead,
-            ", ".join(item.team_members),
             item.submitted_at.isoformat() if item.submitted_at else "",
             item.dqa_score,
             item.score_category,
@@ -334,10 +374,10 @@ def build_submissions_workbook(
         "Register Value",
         "HMIS 105 Value",
         "DHIS2 Value",
-        "Register vs HMIS Difference",
-        "HMIS vs DHIS2 Difference",
-        "Register vs DHIS2 Difference",
-        "Discrepancy Percent",
+        "HMIS vs Register %",
+        "DHIS2 vs HMIS %",
+        "DHIS2 vs Register %",
+        "Max % Difference",
         "Flag",
         "Severity",
         "Issue Type",
@@ -354,10 +394,10 @@ def build_submissions_workbook(
                 row.register_value,
                 row.hmis105_value,
                 row.dhis2_value_at_assessment,
-                row.register_vs_hmis_difference,
-                row.hmis_vs_dhis2_difference,
-                row.register_vs_dhis2_difference,
-                row.discrepancy_percent,
+                row.register_hmis_percent_diff,
+                row.hmis_dhis2_percent_diff,
+                row.register_dhis2_percent_diff,
+                row.max_percent_diff,
                 row.flag,
                 row.severity or "",
                 row.issue_type or "",

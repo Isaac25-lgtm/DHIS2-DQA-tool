@@ -63,6 +63,10 @@ class SubmissionValueRowResponse(BaseModel):
     register_vs_hmis_difference: int | None
     hmis_vs_dhis2_difference: int | None
     register_vs_dhis2_difference: int | None
+    register_hmis_percent_diff: float | None
+    hmis_dhis2_percent_diff: float | None
+    register_dhis2_percent_diff: float | None
+    max_percent_diff: float | None
     discrepancy_percent: float | None
     issue_type: str | None
     severity: str | None

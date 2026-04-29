@@ -34,6 +34,7 @@ from app.schemas.assessment_round import (
 from app.schemas.facility import FacilityRead
 from app.schemas.user import TokenUser
 from app.services.assessment_team_service import serialize_team_member
+from app.services.user_service import deactivate_other_assessor_accounts
 
 DEFAULT_SOURCE_DOCUMENTS = [
     ("ANC register", "Confirm ANC entries used for the selected HMIS 105 indicators."),
@@ -419,8 +420,21 @@ def publish_assessment_round(
     if missing_team_leads:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Each facility must have a Team Lead before publishing. Missing: {', '.join(missing_team_leads[:5])}",
+            detail=f"Each facility must have a shared group login before publishing. Missing: {', '.join(missing_team_leads[:5])}",
         )
+
+    shared_group_user_ids = {
+        member.user_id
+        for item in assessment_round.selected_facilities
+        for member in item.team_members
+        if member.is_active
+    }
+    shared_group_user_ids.update(
+        item.assigned_assessor_id
+        for item in assessment_round.selected_facilities
+        if item.assigned_assessor_id is not None
+    )
+    deactivate_other_assessor_accounts(db, keep_user_ids=shared_group_user_ids)
 
     assessment_round.status = AssessmentRoundStatus.PUBLISHED
     assessment_round.published_at = datetime.now(UTC)

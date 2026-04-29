@@ -107,11 +107,11 @@ export function DashboardPage() {
       accessorKey: "facility_name",
       header: "Facility",
       cell: ({ row }) => (
-        <div>
-          <p className="font-semibold text-brand-text">{row.original.facility_name}</p>
-          <p className="text-xs text-brand-muted">{row.original.team_lead ?? "No Team Lead"}</p>
-        </div>
-      ),
+          <div>
+            <p className="font-semibold text-brand-text">{row.original.facility_name}</p>
+            <p className="text-xs text-brand-muted">{row.original.team_lead ?? "No group account assigned"}</p>
+          </div>
+        ),
     },
     {
       accessorKey: "submitted_at",
@@ -175,13 +175,13 @@ export function DashboardPage() {
                 </option>
               ))}
             </select>
-            <label className="mt-4 block text-sm font-semibold text-cyan-50">Team Lead</label>
+            <label className="mt-4 block text-sm font-semibold text-cyan-50">Group account</label>
             <select
               className="mt-2 w-full rounded-2xl border border-white/20 bg-white px-4 py-3 text-sm text-brand-navy outline-none"
               value={selectedTeamLeadId}
               onChange={(event) => setSelectedTeamLeadId(event.target.value)}
             >
-              <option value="">All Team Leads</option>
+              <option value="">All group accounts</option>
               {(submissions?.team_leads ?? []).map((lead) => (
                 <option key={lead.user_id} value={lead.user_id}>
                   {lead.full_name}

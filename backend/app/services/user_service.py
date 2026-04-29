@@ -6,8 +6,11 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.models.assessment_facility import AssessmentFacility
+from app.models.assessment_facility_team_member import AssessmentFacilityTeamMember
+from app.models.base import UserRole
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate, normalize_email_value
 from app.security import get_password_hash, verify_password
@@ -75,11 +78,58 @@ def update_user(db: Session, user: User, payload: UserUpdate) -> User:
     return user
 
 
+def _remove_user_from_all_assessment_assignments(db: Session, user_id: uuid.UUID) -> None:
+    facilities = list(
+        db.scalars(
+            select(AssessmentFacility)
+            .outerjoin(
+                AssessmentFacilityTeamMember,
+                AssessmentFacilityTeamMember.assessment_facility_id == AssessmentFacility.id,
+            )
+            .where(
+                (AssessmentFacility.assigned_assessor_id == user_id)
+                | (AssessmentFacilityTeamMember.user_id == user_id),
+            )
+            .options(selectinload(AssessmentFacility.team_members))
+        )
+    )
+
+    seen_facility_ids: set[uuid.UUID] = set()
+    for facility in facilities:
+        if facility.id in seen_facility_ids:
+            continue
+        seen_facility_ids.add(facility.id)
+
+        if facility.assigned_assessor_id == user_id:
+            facility.assigned_assessor_id = None
+
+        for member in facility.team_members:
+            if member.user_id == user_id and member.is_active:
+                member.is_active = False
+
+
 def set_user_active_state(db: Session, user: User, is_active: bool) -> User:
     user.is_active = is_active
+    if not is_active:
+        _remove_user_from_all_assessment_assignments(db, user.id)
     db.flush()
     db.refresh(user)
     return user
+
+
+def deactivate_other_assessor_accounts(db: Session, *, keep_user_ids: set[uuid.UUID]) -> list[User]:
+    assessor_query = select(User).where(
+        User.role == UserRole.ASSESSOR,
+        User.is_active.is_(True),
+    )
+    if keep_user_ids:
+        assessor_query = assessor_query.where(User.id.not_in(keep_user_ids))
+
+    assessors_to_deactivate = list(db.scalars(assessor_query))
+    for assessor in assessors_to_deactivate:
+        set_user_active_state(db, assessor, False)
+
+    return assessors_to_deactivate
 
 
 def mark_login_success(db: Session, user: User) -> User:
@@ -87,4 +137,3 @@ def mark_login_success(db: Session, user: User) -> User:
     db.flush()
     db.refresh(user)
     return user
-

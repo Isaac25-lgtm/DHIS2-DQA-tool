@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { Button } from "../components/ui/Button";
+import { BrandLogo } from "../components/ui/BrandLogo";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { useAuth } from "../hooks/useAuth";
@@ -59,6 +60,7 @@ export function LoginPage() {
     <div className="min-h-screen bg-hero-grid">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-10 px-4 py-10 lg:flex-row lg:items-center">
         <div className="max-w-xl text-brand-text">
+          <BrandLogo className="rounded-[32px] px-5 py-4" imageClassName="w-full max-w-[390px]" />
           <div className="inline-flex items-center gap-3 rounded-full border border-brand-border bg-white/80 px-4 py-2 text-sm text-brand-muted shadow-soft">
             <ShieldCheck size={18} className="text-brand-teal" />
             Lightweight modular monolith for UCMB HMIS 105 DQA

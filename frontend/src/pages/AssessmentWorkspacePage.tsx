@@ -10,6 +10,7 @@ import { Textarea } from "../components/ui/Textarea";
 import { useAutoSaveDraft, toDraftValueInputs } from "../hooks/useAutoSaveDraft";
 import { useAuth } from "../hooks/useAuth";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { assessmentAssignmentService } from "../services/assessmentAssignmentService";
 import { assessmentWorkspaceService } from "../services/assessmentWorkspaceService";
 import { dhis2Service } from "../services/dhis2Service";
 import {
@@ -119,7 +120,7 @@ export function AssessmentWorkspacePage() {
 
   const isReviewRoute = location.pathname.startsWith("/assessment-facilities/");
 
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = useCallback(async (options?: { source?: "initial" | "manual" | "automatic" }) => {
     if (!assessmentFacilityId) {
       setError("Assessment workspace id is missing.");
       setLoading(false);
@@ -160,11 +161,14 @@ export function AssessmentWorkspacePage() {
 
       setWorkspace(nextWorkspace);
       const mergedValues = mergeDraftIntoValues(buildEditableValues(nextWorkspace), localDraft);
-      setEditableValues(mergedValues);
-      setGeneralAssessmentComment(localDraft?.general_assessment_comment ?? nextWorkspace.assessment_facility.general_assessment_comment ?? "");
-      setSeedDraft(localDraft);
-      setHasConflict(Boolean(localDraft && localDraft.sync_status !== "SYNCED"));
-      setMessage(nextWorkspace.dhis2_pull_message);
+        setEditableValues(mergedValues);
+        setGeneralAssessmentComment(localDraft?.general_assessment_comment ?? nextWorkspace.assessment_facility.general_assessment_comment ?? "");
+        setSeedDraft(localDraft);
+        setHasConflict(Boolean(localDraft && localDraft.sync_status !== "SYNCED"));
+        setMessage(
+          nextWorkspace.dhis2_pull_message ??
+            (options?.source === "automatic" ? "Manager updates were applied automatically." : null),
+        );
       if (!isReviewRoute) {
         await saveCachedAssessment(nextWorkspace).catch(() => undefined);
       }
@@ -176,8 +180,29 @@ export function AssessmentWorkspacePage() {
   }, [assessmentFacilityId, isOnline, isReviewRoute]);
 
   useEffect(() => {
-    void loadWorkspace();
+    void loadWorkspace({ source: "initial" });
   }, [loadWorkspace]);
+
+  useEffect(() => {
+    if (!assessmentFacilityId || !isOnline || isReviewRoute || !workspace) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void assessmentAssignmentService
+        .getMyAssessmentPackage(assessmentFacilityId)
+        .then((assessmentPackage) => {
+          if (assessmentPackage.offline_cache_version !== workspace.offline_cache_version) {
+            void loadWorkspace({ source: "automatic" });
+          }
+        })
+        .catch(() => {
+          void loadWorkspace({ source: "automatic" });
+        });
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, [assessmentFacilityId, isOnline, isReviewRoute, loadWorkspace, workspace]);
 
   const draftValues = useMemo(
     () =>
@@ -267,7 +292,7 @@ export function AssessmentWorkspacePage() {
         }
       }
       const response = await dhis2Service.syncAssessmentWithDhis2(assessmentFacilityId);
-      await loadWorkspace();
+      await loadWorkspace({ source: "manual" });
       setMessage(response.message ?? "Synced with DHIS2.");
     } catch (retryError) {
       setMessage(retryError instanceof Error ? retryError.message : "Sync with DHIS2 failed.");
@@ -295,7 +320,7 @@ export function AssessmentWorkspacePage() {
       setSyncResult(result);
       setMessage(result.message);
       if (result.status === "SYNCED") {
-        await loadWorkspace();
+        await loadWorkspace({ source: "manual" });
       }
     } finally {
       setSubmitting(false);
@@ -390,7 +415,7 @@ export function AssessmentWorkspacePage() {
               {submitting ? "Sending..." : isOnline ? "Send to Manager" : "Mark to send"}
             </Button>
           ) : workspace.workspace_mode === "EDIT" ? (
-            <Button className="ml-auto" disabled>Only the Team Lead can send this assessment</Button>
+            <Button className="ml-auto" disabled>Only the assigned shared group login can send this assessment</Button>
           ) : null}
         </div>
       </section>
