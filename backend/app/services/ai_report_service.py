@@ -30,6 +30,8 @@ The report should be approximately 13 pages when converted to a Word document us
 
 The report must include all assessed indicators, facilities, findings, discrepancy analysis, source document findings, DHIS2 synchronization findings, data quality scores, corrective actions, recommendations, and conclusion.
 
+If assessor, team, or manager comments are included in the structured input, use them as contextual evidence to explain operational realities, documentation constraints, data flow issues, facility-specific observations, and corrective-action follow-up needs. Treat comments as supporting context only: do not convert a comment into a verified fact unless the structured values or recorded system fields support it.
+
 DATA INTERPRETATION RULES
 
 The assessment compares three data sources:
@@ -92,12 +94,13 @@ Return a clean report narrative using Markdown-style headings and concise tables
 # DHIS2 Synchronization Findings
 # Source Document Findings
 # Major Discrepancies and Root-Cause Interpretation
+# Team Comments and Contextual Observations
 # Corrective Action Plan
 # Recommendations
 # Limitations
 # Conclusion
 
-Use only the structured JSON data provided by the system. If a requested section has no data, state that the relevant information was not provided."""
+Use only the structured JSON data provided by the system. In the Team Comments and Contextual Observations section, summarize only comments present in the input, connect them to the relevant facility, indicator, source document, or corrective action, and clearly distinguish comment-based context from numeric DQA findings. If comments are not included, state that team comments were not included in the report payload."""
 
 
 def _invoke_openai_report_generation(structured_input: dict, *, model: str, api_key: str) -> str:
