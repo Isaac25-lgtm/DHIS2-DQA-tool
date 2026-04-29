@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ClipboardList, MapPinned, Users } from "lucide-react";
 import { z } from "zod";
 import { Badge } from "../ui/Badge";
@@ -141,6 +141,8 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const [selectedFacilityIds, setSelectedFacilityIds] = useState<string[]>([]);
   const [teamAssignments, setTeamAssignments] = useState<Record<string, { leadId: string; memberIds: string[] }>>({});
   const [allowUnassignedPublish, setAllowUnassignedPublish] = useState(false);
+  const assignmentSectionRef = useRef<HTMLDivElement | null>(null);
+  const [autoSavingFacilityId, setAutoSavingFacilityId] = useState<string | null>(null);
 
   const canEditDraft = isManager && (!round || round.status === "DRAFT");
   const canEditTeams =
@@ -531,13 +533,54 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     }
   };
 
+  const saveSingleAssignment = async (
+    facilityId: string,
+    sharedLoginId: string,
+    options?: { message?: string | null },
+  ) => {
+    if (!round || !sharedLoginId) {
+      return false;
+    }
+
+    const assessmentFacility = round.selected_facilities.find((item) => item.facility_id === facilityId);
+    if (!assessmentFacility) {
+      return false;
+    }
+
+    setAutoSavingFacilityId(facilityId);
+    setFormError(null);
+    try {
+      await assessmentAssignmentService.saveTeamMembers(assessmentFacility.id, {
+        team_members: [
+          {
+            user_id: sharedLoginId,
+            team_role: "TEAM_LEAD",
+            can_enter_data: true,
+            can_submit: true,
+          },
+        ],
+      });
+      await loadRound(round.id);
+      if (options?.message) {
+        setMessage(options.message);
+      }
+      return true;
+    } catch {
+      setFormError("Unable to save this shared group login assignment right now.");
+      return false;
+    } finally {
+      setAutoSavingFacilityId(null);
+    }
+  };
+
   const createAssessorInline = async () => {
     setCreatingAssessor(true);
     setFormError(null);
     setMessage(null);
+    const isEditing = Boolean(editingAssessorId);
     try {
       const hasPassword = Boolean(assessorForm.password?.trim());
-      if (!assessorForm.full_name.trim() || !assessorForm.email.trim() || (!editingAssessorId && !hasPassword)) {
+      if (!assessorForm.full_name.trim() || !assessorForm.email.trim() || (!isEditing && !hasPassword)) {
         setFormError("Enter a group name, shared login email, and shared password before creating the group login.");
         return;
       }
@@ -552,8 +595,8 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
         role: "ASSESSOR",
         is_active: true,
       };
-      const created = editingAssessorId
-        ? await userService.updateUser(editingAssessorId, payload)
+      const created = isEditing
+        ? await userService.updateUser(editingAssessorId!, payload)
         : await userService.createUser({
             ...payload,
             password: payload.password ?? "",
@@ -566,16 +609,45 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
           [created.id]: payload.password ?? "",
         }));
       }
+      const firstUnassignedFacilityId = !isEditing
+        ? selectedFacilityIds.find((facilityId) => !teamAssignments[facilityId]?.leadId)
+        : null;
+      if (!isEditing) {
+        setTeamAssignments((current) => {
+          if (!firstUnassignedFacilityId) {
+            return current;
+          }
+          return {
+            ...current,
+            [firstUnassignedFacilityId]: {
+              leadId: created.id,
+              memberIds: current[firstUnassignedFacilityId]?.memberIds ?? [],
+            },
+          };
+        });
+      }
       setAssessorForm(emptyAssessorForm);
       setEditingAssessorId(null);
       setMessage(
-        editingAssessorId
+        isEditing
           ? "Shared group login updated. The manager changes now apply to that group account."
-          : "Shared group login created. Anyone who signs in with those exact credentials will open that group's assigned facilities in this assessment project.",
+          : firstUnassignedFacilityId
+            ? "Shared group login created, accepted, and placed into the next facility automatically."
+            : "Shared group login created and accepted. You can continue assigning that group to facilities below in the same workspace.",
       );
+      if (!isEditing && firstUnassignedFacilityId) {
+        void saveSingleAssignment(firstUnassignedFacilityId, created.id, {
+          message: "Shared group login created and auto-saved into the next facility. Continue assigning in the same space below.",
+        });
+      }
+      if (!isEditing) {
+        window.requestAnimationFrame(() => {
+          assignmentSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
     } catch {
       setFormError(
-        editingAssessorId
+        isEditing
           ? "Unable to update this shared group login. Check whether the email already exists."
           : "Unable to create this shared group login. Check whether the email already exists.",
       );
@@ -708,46 +780,6 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
       setMessage("Selected facilities saved.");
     } catch {
       setFormError("Unable to save selected facilities.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveAssignments = async () => {
-    if (!round) {
-      setFormError("Create the draft round first.");
-      return;
-    }
-
-    setSaving(true);
-    setFormError(null);
-    try {
-      const refreshedRound = await assessmentRoundService.getRound(round.id);
-      const facilitiesByFacilityId = new Map(refreshedRound.selected_facilities.map((item) => [item.facility_id, item]));
-      await Promise.all(
-        selectedFacilityIds.map((facilityId) => {
-          const assessmentFacility = facilitiesByFacilityId.get(facilityId);
-          const team = teamAssignments[facilityId];
-          if (!assessmentFacility || !team?.leadId) {
-            return Promise.resolve();
-          }
-          return assessmentAssignmentService.saveTeamMembers(assessmentFacility.id, {
-            team_members: [
-              {
-                user_id: team.leadId,
-                team_role: "TEAM_LEAD",
-                can_enter_data: true,
-                can_submit: true,
-              },
-            ],
-          });
-        }),
-      );
-      await loadRound(round.id);
-      setActiveStep(4);
-      setMessage("Shared group logins assigned to facilities.");
-    } catch {
-      setFormError("Unable to save shared group login assignments.");
     } finally {
       setSaving(false);
     }
@@ -1414,9 +1446,10 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
             </div>
           </Card>
 
+          <div ref={assignmentSectionRef}>
           <Card
             title="Step 4B: Assign shared login to facilities"
-            subtitle="Choose which shared group credentials should open each selected facility assessment. The same login can be reused on multiple facilities."
+            subtitle="Choose which shared group credentials should open each selected facility assessment. Each selection saves automatically in this same workspace."
           >
           {selectedFacilityDetails.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-brand-border bg-brand-surface p-5 text-sm text-brand-muted">
@@ -1446,16 +1479,22 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                     </p>
                     <Select
                       value={teamAssignments[facility.id]?.leadId ?? ""}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const nextSharedLoginId = event.target.value;
                         setTeamAssignments((current) => ({
                           ...current,
                           [facility.id]: {
-                            leadId: event.target.value,
+                            leadId: nextSharedLoginId,
                             memberIds: current[facility.id]?.memberIds ?? [],
                           },
-                        }))
-                      }
-                      disabled={!canEditTeams}
+                        }));
+                        if (nextSharedLoginId) {
+                          void saveSingleAssignment(facility.id, nextSharedLoginId, {
+                            message: `Shared group login saved for ${facility.facility_name}.`,
+                          });
+                        }
+                      }}
+                      disabled={!canEditTeams || autoSavingFacilityId === facility.id}
                     >
                       <option value="">Select shared login</option>
                       {assessors.map((assessor) => (
@@ -1467,20 +1506,23 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                     <p className="text-xs text-brand-muted">
                       Everyone in that field group should use these exact credentials. This same group login can also be assigned to other facilities in the same project.
                     </p>
+                    {autoSavingFacilityId === facility.id ? (
+                      <p className="text-xs font-semibold text-brand-teal">Saving assignment...</p>
+                    ) : (
+                      <p className="text-xs text-brand-muted">Saved automatically as soon as you choose the shared login.</p>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
           <div className="mt-5 flex gap-2">
-            <Button onClick={() => void saveAssignments()} disabled={!canEditTeams || saving || !round}>
-              {saving ? "Saving..." : "Save assignments"}
-            </Button>
             <Button variant="secondary" onClick={() => setActiveStep(4)} disabled={!round}>
               Continue to review
             </Button>
           </div>
           </Card>
+          </div>
         </div>
       ) : null}
 
