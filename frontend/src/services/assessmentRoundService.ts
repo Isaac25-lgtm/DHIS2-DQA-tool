@@ -79,4 +79,11 @@ export const assessmentRoundService = {
     const response = await api.get<AssessmentRoundProgress>(`/assessment-rounds/${roundId}/progress`);
     return response.data;
   },
+
+  async syncDhis2Values(roundId: string) {
+    const response = await api.post<{ status: string; synced_facilities: number; failed_facilities: number }>(
+      `/assessment-rounds/${roundId}/sync-dhis2-values`,
+    );
+    return response.data;
+  },
 };

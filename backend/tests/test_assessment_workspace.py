@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.models.base import AssessmentFacilityStatus
@@ -100,6 +101,100 @@ def test_assessor_can_open_assigned_workspace(
     assert len(body["selected_indicators"]) == 1
     assert body["workspace_mode"] == "EDIT"
     assert body["values"][0]["dhis2_value_at_assessment"] == 42
+
+
+def test_manager_can_pre_sync_dhis2_before_publish_and_assessor_sees_value(
+    client,
+    manager_token,
+    assessor_token,
+    active_facility,
+    active_indicator,
+    seeded_assessor,
+    monkeypatch,
+) -> None:
+    calls = {"count": 0}
+
+    def fake_fetch(**_):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {
+                active_indicator.dhis2_uid_or_operand: {
+                    "identifier": active_indicator.dhis2_uid_or_operand,
+                    "value": 88,
+                    "status": "SUCCESS",
+                    "error_message": None,
+                    "extracted_at": datetime.now(UTC),
+                }
+            }
+        return {
+            active_indicator.dhis2_uid_or_operand: {
+                "identifier": active_indicator.dhis2_uid_or_operand,
+                "value": None,
+                "status": "ERROR",
+                "error_message": "Temporary DHIS2 outage",
+                "extracted_at": datetime.now(UTC),
+            }
+        }
+
+    monkeypatch.setattr(assessment_workspace_service, "fetch_dhis2_values", fake_fetch)
+
+    round_response = client.post(
+        "/api/assessment-rounds",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={
+            "name": "Pre-sync Round",
+            "description": "Manager pre-sync fixture",
+            "reporting_period": "202603",
+            "period_type": "MONTHLY",
+            "start_date": "2026-03-01",
+            "end_date": "2026-03-31",
+            "deadline": "2026-04-20",
+            "notes": None,
+        },
+    )
+    assert round_response.status_code == 201
+    round_id = round_response.json()["id"]
+
+    indicators_response = client.put(
+        f"/api/assessment-rounds/{round_id}/indicators",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={"indicators": [{"indicator_id": str(active_indicator.id), "display_order": 1, "is_required": True}]},
+    )
+    assert indicators_response.status_code == 200
+    facilities_response = client.put(
+        f"/api/assessment-rounds/{round_id}/facilities",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={"facility_ids": [str(active_facility.id)]},
+    )
+    assert facilities_response.status_code == 200
+    assessment_facility_id = facilities_response.json()[0]["id"]
+    assign_response = client.post(
+        f"/api/assessment-rounds/{round_id}/assign",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={"assignments": [{"facility_id": str(active_facility.id), "assessor_id": str(seeded_assessor.id)}]},
+    )
+    assert assign_response.status_code == 200
+
+    pre_sync = client.post(
+        f"/api/assessment-rounds/{round_id}/sync-dhis2-values",
+        headers={"Authorization": f"Bearer {manager_token}"},
+    )
+    assert pre_sync.status_code == 200
+    assert pre_sync.json()["synced_facilities"] == 1
+
+    publish_response = client.post(
+        f"/api/assessment-rounds/{round_id}/publish",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={"allow_unassigned_facilities": False},
+    )
+    assert publish_response.status_code == 200
+
+    workspace = client.get(
+        f"/api/my-assessments/{assessment_facility_id}/workspace",
+        headers={"Authorization": f"Bearer {assessor_token}"},
+    )
+    assert workspace.status_code == 200
+    assert workspace.json()["values"][0]["dhis2_value_at_assessment"] == 88
 
 
 def test_assessor_cannot_open_another_assessors_workspace(

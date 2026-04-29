@@ -278,16 +278,22 @@ def pull_dhis2_values_for_assessment(
         else:
             normalized = normalized_results.get(identifier)
             if normalized:
+                normalized_status = str(normalized.get("status"))
+                normalized_error = normalized.get("error_message")  # type: ignore[assignment]
+                normalized_extracted_at = normalized.get("extracted_at")  # type: ignore[assignment]
+                normalized_value = normalized.get("value")
                 if latest_refresh:
-                    dqa_value.dhis2_value_latest = normalized.get("value")
-                    dqa_value.dhis2_latest_api_status = str(normalized.get("status"))
-                    dqa_value.dhis2_latest_error_message = normalized.get("error_message")  # type: ignore[assignment]
-                    dqa_value.dhis2_latest_extracted_at = normalized.get("extracted_at")  # type: ignore[assignment]
+                    if normalized_status != DHIS2_ERROR:
+                        dqa_value.dhis2_value_latest = normalized_value
+                    dqa_value.dhis2_latest_api_status = normalized_status
+                    dqa_value.dhis2_latest_error_message = normalized_error
+                    dqa_value.dhis2_latest_extracted_at = normalized_extracted_at
                 else:
-                    dqa_value.dhis2_value_at_assessment = normalized.get("value")
-                    dqa_value.dhis2_api_status = str(normalized.get("status"))
-                    dqa_value.dhis2_error_message = normalized.get("error_message")  # type: ignore[assignment]
-                    dqa_value.dhis2_extracted_at = normalized.get("extracted_at")  # type: ignore[assignment]
+                    if normalized_status != DHIS2_ERROR:
+                        dqa_value.dhis2_value_at_assessment = normalized_value
+                    dqa_value.dhis2_api_status = normalized_status
+                    dqa_value.dhis2_error_message = normalized_error
+                    dqa_value.dhis2_extracted_at = normalized_extracted_at
             else:
                 if latest_refresh:
                     dqa_value.dhis2_value_latest = None

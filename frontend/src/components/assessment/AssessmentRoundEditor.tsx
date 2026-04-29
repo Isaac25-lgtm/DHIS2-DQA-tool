@@ -107,6 +107,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingDhis2, setSyncingDhis2] = useState(false);
   const [round, setRound] = useState<AssessmentRound | null>(null);
   const [form, setForm] = useState<AssessmentRoundPayload>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
@@ -510,6 +511,25 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
       setFormError("Unable to close the assessment round right now.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const syncDhis2Values = async () => {
+    if (!round) {
+      return;
+    }
+    setSyncingDhis2(true);
+    setFormError(null);
+    setMessage(null);
+    try {
+      const response = await assessmentRoundService.syncDhis2Values(round.id);
+      setMessage(
+        `DHIS2 pre-sync complete: ${response.synced_facilities} facilit${response.synced_facilities === 1 ? "y" : "ies"} synced, ${response.failed_facilities} failed.`,
+      );
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to sync DHIS2 values for this assessment.");
+    } finally {
+      setSyncingDhis2(false);
     }
   };
 
@@ -1073,6 +1093,13 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => void syncDhis2Values()}
+                disabled={!isManager || syncingDhis2 || !round || selectedIndicators.length === 0 || selectedFacilityIds.length === 0}
+              >
+                {syncingDhis2 ? "Syncing DHIS2..." : "Pre-sync DHIS2 values"}
+              </Button>
               <Button onClick={() => void publishRound()} disabled={!canEditDraft || saving || !round}>
                 {saving ? "Publishing..." : "Publish round"}
               </Button>
@@ -1111,7 +1138,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                   Offline preparation
                 </div>
                 <p className="mt-2 text-sm text-brand-text">
-                  This package becomes the field team workspace with selected facilities, selected data elements, DHIS2 values, and source document checks.
+                  Pre-sync DHIS2 values before publishing so field teams see system figures as soon as they open their assigned assessment.
                 </p>
               </div>
             </div>

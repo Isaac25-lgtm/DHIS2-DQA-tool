@@ -8,6 +8,14 @@ function toDisplayNumber(value: number | null) {
   return value ?? "";
 }
 
+function DifferenceCell({ value }: { value: number | null }) {
+  return (
+    <span className={value !== null && value > 5 ? "font-bold text-brand-danger" : "font-semibold text-brand-text"}>
+      {formatPercentDiff(value)}
+    </span>
+  );
+}
+
 function fallbackValue(indicatorId: string): DqaValue {
   return {
     id: indicatorId,
@@ -68,7 +76,9 @@ export function AssessmentValueTable({
                 "Register Value",
                 "HMIS 105 Value",
                 "DHIS2 Value",
-                "% Difference",
+                "HMIS vs Register",
+                "DHIS2 vs HMIS 105",
+                "DHIS2 vs Register",
                 "Flag",
               ].map((label) => (
                 <th
@@ -136,11 +146,13 @@ export function AssessmentValueTable({
                     </div>
                   </td>
                   <td className="px-4 py-4 align-top">
-                    <div className="space-y-1 text-xs text-brand-muted">
-                      <p>Max: <span className="font-semibold text-brand-text">{formatPercentDiff(differenceSummary.maxPercentDiff)}</span></p>
-                      <p>Reg/HMIS: {formatPercentDiff(differenceSummary.registerHmisPercentDiff)}</p>
-                      <p>HMIS/DHIS2: {formatPercentDiff(differenceSummary.hmisDhis2PercentDiff)}</p>
-                    </div>
+                    <DifferenceCell value={differenceSummary.registerHmisPercentDiff} />
+                  </td>
+                  <td className="px-4 py-4 align-top">
+                    <DifferenceCell value={differenceSummary.hmisDhis2PercentDiff} />
+                  </td>
+                  <td className="px-4 py-4 align-top">
+                    <DifferenceCell value={differenceSummary.registerDhis2PercentDiff} />
                   </td>
                   <td className="px-4 py-4 align-top">
                     <DifferenceFlagBadge summary={differenceSummary} />
@@ -207,7 +219,9 @@ export function AssessmentValueTable({
 
               <div className="mt-4 grid gap-3 rounded-xl bg-brand-surface px-3 py-3 text-sm text-brand-text sm:grid-cols-2">
                 <p><span className="font-semibold text-brand-navy">DHIS2:</span> {currentValue.dhis2_value_at_assessment ?? "-"}</p>
-                <p><span className="font-semibold text-brand-navy">Difference:</span> {formatPercentDiff(differenceSummary.maxPercentDiff)}</p>
+                <p><span className="font-semibold text-brand-navy">HMIS vs Register:</span> {formatPercentDiff(differenceSummary.registerHmisPercentDiff)}</p>
+                <p><span className="font-semibold text-brand-navy">DHIS2 vs HMIS 105:</span> {formatPercentDiff(differenceSummary.hmisDhis2PercentDiff)}</p>
+                <p><span className="font-semibold text-brand-navy">DHIS2 vs Register:</span> {formatPercentDiff(differenceSummary.registerDhis2PercentDiff)}</p>
               </div>
             </div>
           );
