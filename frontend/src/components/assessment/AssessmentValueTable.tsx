@@ -37,6 +37,73 @@ function DifferenceCell({ value }: { value: number | null }) {
   );
 }
 
+function MetadataChip({ label, value }: { label: string; value: string | null | undefined }) {
+  if (!value) return null;
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-border bg-brand-surface px-2.5 py-1 text-[11px] font-semibold text-brand-muted">
+      <span className="text-brand-navy">{label}:</span>
+      <span className="truncate">{value}</span>
+    </span>
+  );
+}
+
+function IndicatorSummary({ indicator, compact = false }: { indicator: SelectedIndicator; compact?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="info" className="font-mono-ui">{indicator.hmis_code}</Badge>
+        {indicator.is_required ? <Badge tone="success">Required</Badge> : null}
+      </div>
+      <p className={`mt-2 font-semibold leading-snug text-brand-text ${compact ? "text-sm" : "text-[15px]"}`}>
+        {indicator.indicator_name}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <MetadataChip label="Register" value={indicator.source_register ?? "Not set"} />
+        <MetadataChip label="Group" value={indicator.indicator_group} />
+        <MetadataChip label="Combo" value={indicator.category_combo} />
+      </div>
+    </div>
+  );
+}
+
+function ValueEntryField({
+  label,
+  value,
+  onChange,
+  disabled,
+  tone,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+  disabled: boolean;
+  tone: "register" | "hmis";
+}) {
+  const isHmis = tone === "hmis";
+  const labelClass = isHmis ? "text-sky-900" : "text-emerald-900";
+  const inputClass = isHmis
+    ? "min-h-[58px] border-2 border-sky-500 bg-sky-50 px-4 text-center font-mono-ui text-2xl font-black text-sky-950 shadow-[inset_0_0_0_1px_rgba(14,165,233,.2)] placeholder:text-sky-900/35 focus:border-sky-700 focus:ring-sky-200"
+    : "min-h-[58px] border-2 border-emerald-500 bg-emerald-50 px-4 text-center font-mono-ui text-2xl font-black text-emerald-950 shadow-[inset_0_0_0_1px_rgba(16,185,129,.2)] placeholder:text-emerald-900/35 focus:border-emerald-700 focus:ring-emerald-200";
+
+  return (
+    <label className="block rounded-[18px] border border-brand-border bg-white p-2 shadow-sm">
+      <span className={`mb-1 block text-center text-[11px] font-black uppercase tracking-[0.12em] ${labelClass}`}>
+        {label}
+      </span>
+      <Input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        placeholder="0"
+        value={toDisplayNumber(value)}
+        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
+        disabled={disabled}
+        className={inputClass}
+      />
+    </label>
+  );
+}
+
 function dhis2StatusText(value: DqaValue) {
   if (value.dhis2_value_at_assessment !== null && value.dhis2_value_at_assessment !== undefined) {
     if (value.dhis2_api_status === "ERROR" || value.dhis2_api_status === "NOT_CONFIGURED") {
@@ -106,17 +173,11 @@ export function AssessmentValueTable({
   return (
     <div className="space-y-4">
       <div className="hidden overflow-x-auto rounded-[22px] border border-brand-border bg-white shadow-soft xl:block">
-        <table className="min-w-[1180px] divide-y divide-brand-border/70">
+        <table className="min-w-[980px] divide-y divide-brand-border/70">
           <thead>
             <tr className="bg-brand-blue">
               <th rowSpan={2} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
-                Indicator / Data Element
-              </th>
-              <th rowSpan={2} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
-                HMIS Code
-              </th>
-              <th rowSpan={2} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
-                Source Register
+                Indicator, HMIS Code & Source Register
               </th>
               <th rowSpan={2} className="bg-emerald-950/40 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-50">
                 Register Value
@@ -158,46 +219,33 @@ export function AssessmentValueTable({
 
               return (
                 <tr key={indicator.id} className="transition hover:bg-brand-surface/70">
-                  <td className="max-w-xs px-4 py-4 align-top">
-                    <p className="font-semibold text-brand-text">{indicator.indicator_name}</p>
-                    <p className="mt-1 text-xs text-brand-muted">{indicator.indicator_group}</p>
-                    {indicator.category_combo ? <p className="mt-1 text-xs text-brand-muted">{indicator.category_combo}</p> : null}
-                    {indicator.is_required ? <Badge tone="success" className="mt-2">Required</Badge> : null}
+                  <td className="w-[34%] max-w-sm px-4 py-4 align-top">
+                    <IndicatorSummary indicator={indicator} />
                   </td>
-                  <td className="px-4 py-4 align-top">
-                    <Badge tone="info" className="font-mono-ui">{indicator.hmis_code}</Badge>
-                  </td>
-                  <td className="px-4 py-4 align-top text-sm text-brand-text">
-                    {indicator.source_register ?? "Not set"}
-                  </td>
-                  <td className="px-4 py-4 align-top">
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      value={toDisplayNumber(currentValue.register_value)}
-                      onChange={(event) =>
+                  <td className="w-[150px] px-3 py-4 align-top">
+                    <ValueEntryField
+                      label="Register"
+                      value={currentValue.register_value}
+                      onChange={(nextValue) =>
                         onChange(indicator.indicator_id, {
-                          register_value: event.target.value === "" ? null : Number(event.target.value),
+                          register_value: nextValue,
                         })
                       }
                       disabled={disabled}
-                      className="bg-emerald-50 font-mono-ui text-lg font-bold text-emerald-950 placeholder:text-emerald-900/40"
+                      tone="register"
                     />
                   </td>
-                  <td className="px-4 py-4 align-top">
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      value={toDisplayNumber(currentValue.hmis105_value)}
-                      onChange={(event) =>
+                  <td className="w-[160px] bg-sky-50/45 px-3 py-4 align-top">
+                    <ValueEntryField
+                      label="HMIS 105"
+                      value={currentValue.hmis105_value}
+                      onChange={(nextValue) =>
                         onChange(indicator.indicator_id, {
-                          hmis105_value: event.target.value === "" ? null : Number(event.target.value),
+                          hmis105_value: nextValue,
                         })
                       }
                       disabled={disabled}
-                      className="border-2 border-sky-300 bg-sky-50 font-mono-ui text-lg font-bold text-sky-950 shadow-inner placeholder:text-sky-900/40 focus:border-sky-500 focus:ring-sky-200"
+                      tone="hmis"
                     />
                   </td>
                   <td className="border-l-2 border-emerald-200 bg-emerald-50/45 px-4 py-4 align-top">
@@ -239,54 +287,39 @@ export function AssessmentValueTable({
           );
 
           return (
-            <div key={indicator.id} className="rounded-[22px] border border-brand-border bg-white p-4 shadow-soft">
+            <div key={indicator.id} className="rounded-[18px] border border-brand-border bg-white p-3 shadow-soft">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-brand-text">{indicator.indicator_name}</p>
-                  <p className="font-mono-ui mt-1 text-sm text-brand-teal">{indicator.hmis_code}</p>
-                  <p className="mt-1 text-xs text-brand-muted">{indicator.source_register ?? "Source register not set"}</p>
-                  <p className="mt-1 text-xs text-brand-muted">{indicator.indicator_group}{indicator.category_combo ? ` - ${indicator.category_combo}` : ""}</p>
-                </div>
+                <IndicatorSummary indicator={indicator} compact />
                 <DifferenceFlagBadge summary={differenceSummary} />
               </div>
 
-              <div className="mt-4 grid gap-3">
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-muted">Register Value</span>
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={toDisplayNumber(currentValue.register_value)}
-                    onChange={(event) =>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <ValueEntryField
+                  label="Register"
+                  value={currentValue.register_value}
+                  onChange={(nextValue) =>
                       onChange(indicator.indicator_id, {
-                        register_value: event.target.value === "" ? null : Number(event.target.value),
+                      register_value: nextValue,
                       })
                     }
-                    disabled={disabled}
-                    className="bg-emerald-50 font-mono-ui text-lg font-bold text-emerald-950"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-muted">HMIS 105 Value</span>
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={toDisplayNumber(currentValue.hmis105_value)}
-                    onChange={(event) =>
+                  disabled={disabled}
+                  tone="register"
+                />
+                <ValueEntryField
+                  label="HMIS 105"
+                  value={currentValue.hmis105_value}
+                  onChange={(nextValue) =>
                       onChange(indicator.indicator_id, {
-                        hmis105_value: event.target.value === "" ? null : Number(event.target.value),
+                      hmis105_value: nextValue,
                       })
                     }
-                    disabled={disabled}
-                    className="border-2 border-sky-300 bg-sky-50 font-mono-ui text-lg font-bold text-sky-950"
-                  />
-                </label>
+                  disabled={disabled}
+                  tone="hmis"
+                />
               </div>
 
-              <div className="mt-4 grid gap-3 rounded-[18px] bg-brand-surface px-3 py-3 text-sm text-brand-text sm:grid-cols-2">
-                <p className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <div className="mt-3 grid gap-2 rounded-[14px] bg-brand-surface px-3 py-3 text-xs text-brand-text sm:grid-cols-2">
+                <p className="rounded-[12px] border border-emerald-200 bg-emerald-50 px-3 py-2">
                   <span className="font-semibold text-emerald-800">DHIS2:</span> {currentValue.dhis2_value_at_assessment ?? "-"}
                   <span className="mt-1 block text-xs text-emerald-700">{dhis2StatusText(currentValue)}</span>
                 </p>

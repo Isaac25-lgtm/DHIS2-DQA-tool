@@ -1,8 +1,13 @@
 import { api } from "./api";
 import type { SubmissionDashboard, SubmissionDetail } from "../types";
 
+const SUBMISSION_EXPORT_TIMEOUT_MS = 180000;
+
 async function downloadBlob(url: string, fallbackFileName: string) {
-  const response = await api.get(url, { responseType: "blob" });
+  const response = await api.get(url, {
+    responseType: "blob",
+    timeout: SUBMISSION_EXPORT_TIMEOUT_MS,
+  });
   const fileName =
     response.headers["content-disposition"]?.match(/filename="?([^"]+)"?/)?.[1] ??
     fallbackFileName;
@@ -32,13 +37,16 @@ export const submissionService = {
     return response.data;
   },
 
-  downloadCumulativeXlsx(assessmentRoundId?: string | null, teamLeadUserId?: string | null) {
+  downloadCumulativeXlsx(assessmentRoundId?: string | null, teamLeadUserId?: string | null, assessmentFacilityId?: string | null) {
     const params = new URLSearchParams();
     if (assessmentRoundId) {
       params.set("assessment_round_id", assessmentRoundId);
     }
     if (teamLeadUserId) {
       params.set("team_lead_user_id", teamLeadUserId);
+    }
+    if (assessmentFacilityId) {
+      params.set("assessment_facility_id", assessmentFacilityId);
     }
     const query = params.toString() ? `?${params.toString()}` : "";
     return downloadBlob(`/submissions/export/xlsx${query}`, "ucmb-submissions.xlsx");

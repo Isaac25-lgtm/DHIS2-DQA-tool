@@ -97,6 +97,15 @@ def _sanitize_comments(structured_input: dict, include_comments: bool) -> dict:
             current.pop("verification_comment", None)
             redacted_actions.append(current)
         result["corrective_actions"] = redacted_actions
+    if isinstance(result.get("source_document_checks"), list):
+        redacted_docs = []
+        for item in result["source_document_checks"]:
+            current = dict(item)
+            current.pop("comment", None)
+            redacted_docs.append(current)
+        result["source_document_checks"] = redacted_docs
+    result["general_facility_comments"] = []
+    result["manager_comments"] = []
     return result
 
 
@@ -165,6 +174,16 @@ def _completion_percent(assessed: int, selected: int) -> float:
     if selected <= 0:
         return 0.0
     return round((assessed / selected) * 100, 1)
+
+
+def _percent_diff(reference_value: int | None, comparison_value: int | None) -> float | None:
+    if reference_value is None or comparison_value is None:
+        return None
+    if reference_value == 0 and comparison_value == 0:
+        return 0.0
+    if reference_value == 0:
+        return None
+    return round(abs(comparison_value - reference_value) / abs(reference_value) * 100, 2)
 
 
 def _facility_report_data(db: Session, assessment_facility_id: UUID, include_comments: bool, current_user: User) -> tuple[str, dict]:
@@ -282,6 +301,56 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
         }
         for facility in assessment_round.selected_facilities
     ]
+    comparison_rows: list[dict] = []
+    source_document_checks: list[dict] = []
+    general_facility_comments: list[dict] = []
+    manager_comments: list[dict] = []
+    for facility in assessment_round.selected_facilities:
+        selected_by_indicator = {item.indicator_id: item for item in facility.assessment_round.selected_indicators}
+        try:
+            comparison_results = get_comparison_results_for_assessment_facility(db, facility.id, current_user).model_dump(mode="json")
+        except HTTPException:
+            comparison_results = {"comparison_rows": []}
+        for row in comparison_results.get("comparison_rows", []):
+            indicator_id = UUID(row["indicator_id"]) if row.get("indicator_id") else None
+            selected = selected_by_indicator.get(indicator_id) if indicator_id else None
+            register_value = row.get("register_value")
+            hmis105_value = row.get("hmis105_value")
+            dhis2_value = row.get("dhis2_value_at_assessment")
+            register_hmis_percent_diff = _percent_diff(register_value, hmis105_value)
+            hmis_dhis2_percent_diff = _percent_diff(hmis105_value, dhis2_value)
+            register_dhis2_percent_diff = _percent_diff(register_value, dhis2_value)
+            valid_diffs = [
+                value
+                for value in (register_hmis_percent_diff, hmis_dhis2_percent_diff, register_dhis2_percent_diff)
+                if value is not None
+            ]
+            comparison_rows.append(
+                {
+                    **row,
+                    "facility_name": facility.facility.facility_name,
+                    "district": facility.facility.district,
+                    "team_lead": facility.assigned_assessor.full_name if facility.assigned_assessor else None,
+                    "source_register": selected.indicator.source_register if selected else None,
+                    "register_hmis_percent_diff": register_hmis_percent_diff,
+                    "hmis_dhis2_percent_diff": hmis_dhis2_percent_diff,
+                    "register_dhis2_percent_diff": register_dhis2_percent_diff,
+                    "max_percent_diff": max(valid_diffs) if valid_diffs else None,
+                }
+            )
+        for item in facility.source_document_checks:
+            source_document_checks.append(
+                {
+                    "facility_name": facility.facility.facility_name,
+                    **_serialize_source_document_checks([item])[0],
+                }
+            )
+        if include_comments and facility.general_assessment_comment:
+            general_facility_comments.append(
+                {"facility_name": facility.facility.facility_name, "comment": facility.general_assessment_comment}
+            )
+        if include_comments and facility.manager_comment:
+            manager_comments.append({"facility_name": facility.facility.facility_name, "comment": facility.manager_comment})
 
     common_payload = {
         "assessment_round": {
@@ -311,6 +380,10 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
         "facility_score_ranking": facility_analytics,
         "indicator_findings": indicator_analytics,
         "source_document_completeness": source_document_analytics,
+        "source_document_checks": source_document_checks,
+        "comparison_rows": comparison_rows,
+        "general_facility_comments": general_facility_comments,
+        "manager_comments": manager_comments,
         "corrective_actions": corrective_actions,
         "dhis2_sync_summary": _build_dhis2_sync_summary(all_dqa_values),
         "generated_timestamp": datetime.now(UTC).isoformat(),

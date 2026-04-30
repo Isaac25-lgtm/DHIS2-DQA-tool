@@ -84,11 +84,10 @@ export function AssessmentRoundsPage() {
         cell: ({ row }) => (
           <div className="text-sm">
             <p className="font-medium text-brand-text">{row.original.reporting_period}</p>
-            <p className="text-brand-muted">{row.original.period_type}</p>
             <p className="text-xs text-brand-muted">
               {row.original.start_date && row.original.end_date
-                ? `${row.original.start_date} to ${row.original.end_date}`
-                : "Date window not set"}
+                ? `DHIS2 months: ${row.original.start_date.slice(0, 7)} to ${row.original.end_date.slice(0, 7)}`
+                : "DHIS2 month range not set"}
             </p>
           </div>
         ),

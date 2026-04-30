@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 from app.models.base import AssessmentFacilityStatus
@@ -322,6 +322,63 @@ def test_dhis2_service_normalizes_simple_uids_and_operands(monkeypatch) -> None:
     assert response["idXOxt69W0e"]["value"] == 100
     assert response["idXOxt69W0e"]["status"] == "SUCCESS"
     assert response["RYcEItpNCUp.Ck8FveDhZSy"]["value"] == 55
+
+
+def test_dhis2_service_uses_exact_month_range_and_sums_values(monkeypatch) -> None:
+    captured_params: list[tuple[str, str]] = []
+    payload = {
+        "headers": [{"name": "dx"}, {"name": "pe"}, {"name": "value"}],
+        "rows": [
+            ["idXOxt69W0e", "202510", "10"],
+            ["idXOxt69W0e", "202511", "20"],
+            ["idXOxt69W0e", "202512", "30"],
+        ],
+    }
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, *args, **kwargs):
+            captured_params.extend(kwargs["params"])
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.dhis2_service.is_dhis2_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.dhis2_service.get_settings",
+        lambda: SimpleNamespace(
+            dhis2_base_url="https://example.org/api",
+            dhis2_username="demo",
+            dhis2_password="demo",
+        ),
+    )
+    monkeypatch.setattr("app.services.dhis2_service.httpx.Client", FakeClient)
+
+    response = fetch_dhis2_values(
+        facility_uid="facility123",
+        reporting_period="2025-10 to 2025-12",
+        period_type="CUSTOM",
+        identifiers=["idXOxt69W0e"],
+        start_date=date(2025, 10, 1),
+        end_date=date(2025, 12, 31),
+    )
+
+    assert ("dimension", "pe:202510;202511;202512") in captured_params
+    assert response["idXOxt69W0e"]["value"] == 60
+    assert response["idXOxt69W0e"]["status"] == "SUCCESS"
 
 
 def test_dhis2_failure_does_not_prevent_workspace_loading(

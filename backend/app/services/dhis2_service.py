@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
@@ -350,9 +350,10 @@ def normalize_dhis2_analytics_response(
                 error_message=f"DHIS2 returned a non-numeric value: {raw_value}",
             )
             continue
+        current_value = normalized.get(identifier, {}).get("value")
         normalized[identifier] = {
             "identifier": identifier,
-            "value": parsed_value,
+            "value": (int(current_value) if isinstance(current_value, int) else 0) + parsed_value,
             "status": DHIS2_SUCCESS,
             "error_message": None,
             "extracted_at": extracted_timestamp,
@@ -361,12 +362,42 @@ def normalize_dhis2_analytics_response(
     return normalized
 
 
+def monthly_periods_between(start_date: date | None, end_date: date | None) -> list[str]:
+    if not start_date or not end_date:
+        return []
+
+    current = date(start_date.year, start_date.month, 1)
+    end_month = date(end_date.year, end_date.month, 1)
+    if end_month < current:
+        return []
+
+    periods: list[str] = []
+    while current <= end_month:
+        periods.append(f"{current.year}{current.month:02d}")
+        if current.month == 12:
+            current = date(current.year + 1, 1, 1)
+        else:
+            current = date(current.year, current.month + 1, 1)
+    return periods
+
+
+def _analytics_params(*, identifiers: list[str], periods: list[str], facility_uid: str) -> list[tuple[str, str]]:
+    return [
+        ("dimension", f"dx:{';'.join(identifiers)}"),
+        ("dimension", f"pe:{';'.join(periods)}"),
+        ("dimension", f"ou:{facility_uid}"),
+        ("displayProperty", "NAME"),
+    ]
+
+
 def fetch_dhis2_values(
     *,
     facility_uid: str,
     reporting_period: str,
     period_type: PeriodType,
     identifiers: list[str],
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> dict[str, dict[str, Any]]:
     extracted_at = datetime.now(UTC)
     if not identifiers:
@@ -382,18 +413,19 @@ def fetch_dhis2_values(
             for identifier in identifiers
         }
 
-    normalized_period = normalize_reporting_period(reporting_period, period_type)
+    periods = monthly_periods_between(start_date, end_date) or [normalize_reporting_period(reporting_period, period_type)]
     endpoint = f"{_base_url()}/analytics.json"
-    params = [
-        ("dimension", f"dx:{';'.join(identifiers)}"),
-        ("dimension", f"pe:{normalized_period}"),
-        ("dimension", f"ou:{facility_uid}"),
-        ("displayProperty", "NAME"),
-    ]
 
     try:
         with _client() as client:
-            response = client.get(endpoint, params=params)
+            response = client.get(
+                endpoint,
+                params=_analytics_params(
+                    identifiers=identifiers,
+                    periods=periods,
+                    facility_uid=facility_uid,
+                ),
+            )
             response.raise_for_status()
         payload = response.json()
         return normalize_dhis2_analytics_response(payload, identifiers, extracted_at=extracted_at)

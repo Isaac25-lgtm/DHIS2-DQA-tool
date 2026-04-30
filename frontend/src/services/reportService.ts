@@ -1,6 +1,8 @@
 import { api } from "./api";
 import type { Report, ReportGeneratePayload } from "../types";
 
+const REPORT_GENERATION_TIMEOUT_MS = 180000;
+
 export const reportService = {
   async listReports(filters?: {
     assessment_round_id?: string;
@@ -12,7 +14,9 @@ export const reportService = {
     return data;
   },
   async generateReport(payload: ReportGeneratePayload) {
-    const { data } = await api.post<Report>("/reports/generate", payload);
+    const { data } = await api.post<Report>("/reports/generate", payload, {
+      timeout: REPORT_GENERATION_TIMEOUT_MS,
+    });
     return data;
   },
   async getReport(reportId: string) {

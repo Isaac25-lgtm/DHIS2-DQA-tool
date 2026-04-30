@@ -5,7 +5,8 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.formatting.rule import ColorScaleRule
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload, joinedload
 
@@ -50,6 +51,12 @@ def _list_assessment_facilities(db: Session, assessment_round_id: UUID | None = 
     if assessment_round_id:
         statement = statement.where(AssessmentFacility.assessment_round_id == assessment_round_id)
     return list(db.scalars(statement).unique())
+
+
+def _filter_by_assessment_facility_id(items: list[AssessmentFacility], assessment_facility_id: UUID | None = None) -> list[AssessmentFacility]:
+    if not assessment_facility_id:
+        return items
+    return [item for item in items if item.id == assessment_facility_id]
 
 
 def _selected_indicator_map(assessment_facility: AssessmentFacility) -> dict[UUID, AssessmentRoundIndicator]:
@@ -223,6 +230,8 @@ def _serialize_submission_rows(assessment_facility: AssessmentFacility) -> list[
                 severity=value.severity.value if value and value.severity else None,
                 flag=_flag_for_value(value),
                 comparison_notes=value.comparison_notes if value else None,
+                assessor_comment=value.assessor_comment if value else None,
+                manager_comment=value.manager_comment if value else None,
             )
         )
     return rows
@@ -289,10 +298,50 @@ def get_submission_detail(db: Session, assessment_facility_id: UUID) -> Submissi
 
 
 def _style_header(sheet) -> None:
-    fill = PatternFill("solid", fgColor="0F766E")
+    fill = PatternFill("solid", fgColor="0F4C81")
     for cell in sheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+
+def _flag_fill(flag: str | None) -> PatternFill | None:
+    colors = {
+        "Match": "C6EFCE",
+        "Within 5%": "DDEBF7",
+        "Flagged >5%": "FCE4D6",
+        "Critical": "FFC7CE",
+        "Incomplete": "D9EAD3",
+        "EXACT": "C6EFCE",
+        "MINOR": "DDEBF7",
+        "MODERATE": "FFF2CC",
+        "MAJOR": "FCE4D6",
+        "MISSING": "D9EAD3",
+        "CRITICAL": "FFC7CE",
+    }
+    color = colors.get(flag or "")
+    return PatternFill("solid", fgColor=color) if color else None
+
+
+def _style_body(sheet) -> None:
+    thin = Side(style="thin", color="D9E2F3")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+        if row[0].row % 2 == 0:
+            for cell in row:
+                if cell.fill.fill_type is None:
+                    cell.fill = PatternFill("solid", fgColor="F8FBFD")
+
+
+def _finish_sheet(sheet) -> None:
+    _style_header(sheet)
+    _style_body(sheet)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    _autosize(sheet)
 
 
 def _autosize(sheet) -> None:
@@ -312,12 +361,16 @@ def build_submissions_workbook(
         detail = get_submission_detail(db, assessment_facility_id)
         items = [detail.summary]
         rows_by_facility = {assessment_facility_id: detail.values}
-        stats = build_submission_stats(_list_assessment_facilities(db, detail.summary.assessment_round_id))
+        stats = build_submission_stats(
+            _filter_by_assessment_facility_id(_list_assessment_facilities(db, detail.summary.assessment_round_id), assessment_facility_id)
+        )
     else:
-        dashboard = get_submissions_dashboard(db, assessment_round_id, team_lead_user_id)
-        items = dashboard.submissions
+        facilities = _filter_by_team_lead(_list_assessment_facilities(db, assessment_round_id), team_lead_user_id)
+        facilities = _filter_by_assessment_facility_id(facilities, assessment_facility_id)
+        submitted = [item for item in facilities if item.status in SUBMITTED_STATUSES]
+        items = [serialize_submission_item(item) for item in sorted(submitted, key=lambda item: item.submitted_at or item.updated_at, reverse=True)]
         rows_by_facility = {item.assessment_facility_id: get_submission_detail(db, item.assessment_facility_id).values for item in items}
-        stats = dashboard.stats
+        stats = build_submission_stats(facilities)
 
     workbook = Workbook()
     summary = workbook.active
@@ -325,8 +378,7 @@ def build_submissions_workbook(
     summary.append(["Metric", "Value"])
     for key, value in stats.model_dump().items():
         summary.append([key.replace("_", " ").title(), value])
-    _style_header(summary)
-    _autosize(summary)
+    _finish_sheet(summary)
 
     submissions = workbook.create_sheet("Submissions")
     submissions.append([
@@ -343,6 +395,7 @@ def build_submissions_workbook(
         "Total Indicators",
         "Flagged Rows",
         "Critical Rows",
+        "Team Members",
         "General Comment",
     ])
     for item in items:
@@ -360,14 +413,18 @@ def build_submissions_workbook(
             item.total_indicators,
             item.flagged_rows,
             item.critical_rows,
+            ", ".join(item.team_members),
             item.general_assessment_comment or "",
         ])
-    _style_header(submissions)
-    _autosize(submissions)
+    _finish_sheet(submissions)
 
     data = workbook.create_sheet("Submitted Data")
     data.append([
+        "Assessment Round",
+        "Reporting Period",
         "Facility",
+        "District",
+        "Group Account",
         "HMIS Code",
         "Indicator",
         "Source Register",
@@ -382,12 +439,20 @@ def build_submissions_workbook(
         "Severity",
         "Issue Type",
         "Notes",
+        "Field Assessor Comment",
+        "Manager Comment",
+        "General Facility Comment",
     ])
-    names = {item.assessment_facility_id: item.facility_name for item in items}
+    meta_by_facility = {item.assessment_facility_id: item for item in items}
     for assessment_facility_id_key, rows in rows_by_facility.items():
+        item = meta_by_facility.get(assessment_facility_id_key)
         for row in rows:
             data.append([
-                names.get(assessment_facility_id_key, ""),
+                item.assessment_round_name if item else "",
+                item.reporting_period if item else "",
+                item.facility_name if item else "",
+                item.district if item else "",
+                item.team_lead if item else "",
                 row.hmis_code,
                 row.indicator_name,
                 row.source_register or "",
@@ -402,9 +467,38 @@ def build_submissions_workbook(
                 row.severity or "",
                 row.issue_type or "",
                 row.comparison_notes or "",
+                row.assessor_comment or "",
+                row.manager_comment or "",
+                item.general_assessment_comment if item and item.general_assessment_comment else "",
             ])
-    _style_header(data)
-    _autosize(data)
+    flag_col = 16
+    severity_col = 17
+    percent_cols = ["L", "M", "N", "O"]
+    for row in data.iter_rows(min_row=2):
+        for col_idx in (flag_col, severity_col):
+            fill = _flag_fill(str(row[col_idx - 1].value or ""))
+            if fill:
+                row[col_idx - 1].fill = fill
+                row[col_idx - 1].font = Font(bold=True)
+    if data.max_row >= 2:
+        for col in percent_cols:
+            data.conditional_formatting.add(
+                f"{col}2:{col}{data.max_row}",
+                ColorScaleRule(start_type="num", start_value=0, start_color="C6EFCE", mid_type="num", mid_value=5, mid_color="FFF2CC", end_type="num", end_value=20, end_color="FFC7CE"),
+            )
+    _finish_sheet(data)
+
+    comments = workbook.create_sheet("Field Comments")
+    comments.append(["Facility", "Group Account", "HMIS Code", "Indicator", "Comment Type", "Comment"])
+    for item in items:
+        if item.general_assessment_comment:
+            comments.append([item.facility_name, item.team_lead or "", "", "", "General Facility Comment", item.general_assessment_comment])
+        for row in rows_by_facility.get(item.assessment_facility_id, []):
+            if row.assessor_comment:
+                comments.append([item.facility_name, item.team_lead or "", row.hmis_code, row.indicator_name, "Field Assessor Comment", row.assessor_comment])
+            if row.manager_comment:
+                comments.append([item.facility_name, item.team_lead or "", row.hmis_code, row.indicator_name, "Manager Comment", row.manager_comment])
+    _finish_sheet(comments)
 
     output = BytesIO()
     workbook.save(output)

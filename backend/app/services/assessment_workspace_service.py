@@ -232,6 +232,8 @@ def pull_dhis2_values_for_assessment(
             reporting_period=assessment_facility.assessment_round.reporting_period,
             period_type=assessment_facility.assessment_round.period_type,
             identifiers=identifiers,
+            start_date=assessment_facility.assessment_round.start_date,
+            end_date=assessment_facility.assessment_round.end_date,
         )
         extracted_timestamps = [
             item["extracted_at"]
@@ -362,8 +364,9 @@ def build_assessment_workspace_response(
 
     ordered_indicator_ids = [item.indicator_id for item in _ordered_selected_indicators(assessment_facility)]
     value_order = {indicator_id: index for index, indicator_id in enumerate(ordered_indicator_ids)}
+    ordered_indicator_id_set = set(ordered_indicator_ids)
     ordered_values = sorted(
-        assessment_facility.dqa_values,
+        [value for value in assessment_facility.dqa_values if value.indicator_id in ordered_indicator_id_set],
         key=lambda item: value_order.get(item.indicator_id, 9999),
     )
 

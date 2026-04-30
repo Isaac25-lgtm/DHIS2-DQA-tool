@@ -265,6 +265,28 @@ def test_docx_and_xlsx_export_return_file_responses_and_logs_are_saved(
     assert db_session.query(ExportLog).filter_by(report_id=UUID(report_id)).count() >= 2
 
 
+def test_generated_report_can_be_exported_to_docx_without_approval(
+    client, db_session, manager_token, assessor_token, active_facility, active_indicator, seeded_assessor
+) -> None:
+    _, assessment_facility_id = _prepare_compared_assessment(
+        client, db_session, manager_token, assessor_token, active_facility, active_indicator, seeded_assessor
+    )
+    generate_response = client.post(
+        "/api/reports/generate",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={"assessment_facility_id": assessment_facility_id, "report_type": "FACILITY_DQA_REPORT", "include_comments": False},
+    )
+    report_id = generate_response.json()["id"]
+
+    docx_response = client.get(f"/api/reports/{report_id}/export/docx", headers={"Authorization": f"Bearer {manager_token}"})
+
+    assert docx_response.status_code == 200
+    assert docx_response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert docx_response.content.startswith(b"PK")
+
+
 def test_pdf_export_handles_dependency_availability_gracefully(
     client, db_session, manager_token, assessor_token, active_facility, active_indicator, seeded_assessor
 ) -> None:

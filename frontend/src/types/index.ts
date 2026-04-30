@@ -545,6 +545,8 @@ export interface SubmissionValueRow {
   severity: string | null;
   flag: string;
   comparison_notes: string | null;
+  assessor_comment: string | null;
+  manager_comment: string | null;
 }
 
 export interface SubmissionDetail {

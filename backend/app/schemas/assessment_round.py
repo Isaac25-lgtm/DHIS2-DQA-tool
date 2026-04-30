@@ -64,6 +64,8 @@ class AssessmentRoundBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self) -> "AssessmentRoundBase":
+        if not self.start_date or not self.end_date:
+            raise ValueError("Select both the first and last DHIS2 month for this assessment period.")
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("End date cannot be earlier than start date.")
         return self

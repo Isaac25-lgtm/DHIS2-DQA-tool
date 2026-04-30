@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ClipboardList, MapPinned, Users } from "lucide-react";
 import { z } from "zod";
 import { Badge } from "../ui/Badge";
@@ -21,7 +22,6 @@ import type {
   Dhis2FacilitySearchResult,
   Facility,
   Indicator,
-  PeriodType,
   SelectedIndicatorPayload,
   User,
   UserFormPayload,
@@ -50,40 +50,40 @@ const stepTitles = [
   "Select indicators",
   "Select facilities",
   "Create shared group logins",
-  "Review and publish",
+  "Review and update",
 ] as const;
 
-const periodTypeOptions: PeriodType[] = ["MONTHLY", "QUARTERLY", "ANNUAL", "CUSTOM"];
+function toMonthInputValue(value: string | null | undefined) {
+  return value ? value.slice(0, 7) : "";
+}
 
-function deriveReportingPeriod(periodType: PeriodType, startDate: string | null, endDate: string | null, fallback = "") {
-  if (!startDate) {
-    return fallback;
+function toMonthStartDate(monthValue: string) {
+  return monthValue ? `${monthValue}-01` : null;
+}
+
+function toMonthEndDate(monthValue: string) {
+  if (!monthValue) {
+    return null;
   }
-  const [year, month] = startDate.split("-");
+  const [year, month] = monthValue.split("-").map(Number);
   if (!year || !month) {
+    return null;
+  }
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+function deriveMonthRangeLabel(startDate: string | null, endDate: string | null, fallback = "") {
+  if (!startDate || !endDate) {
     return fallback;
   }
-  if (periodType === "MONTHLY") {
-    return `${year}${month}`;
-  }
-  if (periodType === "QUARTERLY") {
-    return `${year}Q${Math.ceil(Number(month) / 3)}`;
-  }
-  if (periodType === "ANNUAL") {
-    return year;
-  }
-  const compactStartDate = startDate.replace(/-/g, "");
-  if (endDate) {
-    return `${compactStartDate}-${endDate.replace(/-/g, "")}`;
-  }
-  return compactStartDate;
+  return `${startDate.slice(0, 7)} to ${endDate.slice(0, 7)}`;
 }
 
 const emptyForm: AssessmentRoundPayload = {
   name: "",
   description: "",
   reporting_period: "",
-  period_type: "MONTHLY",
+  period_type: "CUSTOM",
   start_date: null,
   end_date: null,
   deadline: null,
@@ -97,6 +97,16 @@ const emptyAssessorForm: UserFormPayload = {
   role: "ASSESSOR",
   is_active: true,
 };
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+  }
+  return fallback;
+}
 
 interface AssessmentRoundEditorProps {
   roundId?: string;
@@ -144,7 +154,8 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const assignmentSectionRef = useRef<HTMLDivElement | null>(null);
   const [autoSavingFacilityId, setAutoSavingFacilityId] = useState<string | null>(null);
 
-  const canEditDraft = isManager && (!round || round.status === "DRAFT");
+  const canEditDraft = isManager && (!round || !["CLOSED", "ARCHIVED"].includes(round.status));
+  const canPublishDraft = isManager && round?.status === "DRAFT";
   const canEditTeams =
     isManager && Boolean(round) && round?.status !== "CLOSED" && round?.status !== "ARCHIVED";
   const sharedLoginPasswordStorageKey = round?.id ? `assessment-round-shared-login-passwords:${round.id}` : null;
@@ -713,27 +724,44 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     setFormError(null);
     setMessage(null);
     try {
+      if (!form.start_date || !form.end_date) {
+        setFormError("Select both the From month and To month so DHIS2 knows the exact months to pull.");
+        return;
+      }
+      const normalizedForm: AssessmentRoundPayload = {
+        ...form,
+        period_type: "CUSTOM",
+        reporting_period: deriveMonthRangeLabel(form.start_date, form.end_date, form.reporting_period),
+      };
       basicDetailsSchema.parse({
-        name: form.name,
-        reporting_period: form.reporting_period,
-        period_type: form.period_type,
-        start_date: form.start_date,
-        end_date: form.end_date,
-        deadline: form.deadline,
+        name: normalizedForm.name,
+        reporting_period: normalizedForm.reporting_period,
+        period_type: normalizedForm.period_type,
+        start_date: normalizedForm.start_date,
+        end_date: normalizedForm.end_date,
+        deadline: normalizedForm.deadline,
       });
 
       const payload: AssessmentRoundPayload = {
-        ...form,
-        description: form.description || null,
-        notes: form.notes || null,
+        ...normalizedForm,
+        description: normalizedForm.description || null,
+        notes: normalizedForm.notes || null,
       };
 
       const nextRound = round
         ? await assessmentRoundService.updateRound(round.id, payload)
         : await assessmentRoundService.createRound(payload);
+      const wasCreating = !round;
+      const wasDraft = round?.status === "DRAFT";
       hydrateFromRound(nextRound);
-      setActiveStep(1);
-      setMessage(round ? "Assessment round updated." : "Draft assessment round created.");
+      if (wasCreating || wasDraft) {
+        setActiveStep(1);
+      }
+      setMessage(
+        wasCreating
+          ? "Draft assessment round created."
+          : "Assessment updated. Assessors will see these manager changes automatically.",
+      );
     } catch (error) {
       if (error instanceof z.ZodError) {
         setFormError(error.issues[0]?.message ?? "Please review the basic details.");
@@ -756,8 +784,10 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     try {
       await assessmentRoundService.replaceIndicators(round.id, selectedIndicators);
       await loadRound(round.id);
-      setActiveStep(2);
-      setMessage("Selected indicators saved.");
+      if (round.status === "DRAFT") {
+        setActiveStep(2);
+      }
+      setMessage("Assessment indicators updated. Assessors will see added or removed indicators automatically.");
     } catch {
       setFormError("Unable to save selected indicators.");
     } finally {
@@ -776,10 +806,12 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     try {
       await assessmentRoundService.replaceFacilities(round.id, { facility_ids: selectedFacilityIds });
       await loadRound(round.id);
-      setActiveStep(3);
-      setMessage("Selected facilities saved.");
-    } catch {
-      setFormError("Unable to save selected facilities.");
+      if (round.status === "DRAFT") {
+        setActiveStep(3);
+      }
+      setMessage("Assessment facilities updated. Assessors will see added or removed facilities automatically.");
+    } catch (error) {
+      setFormError(getErrorMessage(error, "Unable to save selected facilities."));
     } finally {
       setSaving(false);
     }
@@ -897,81 +929,58 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
       </div>
 
       {activeStep === 0 ? (
-        <Card title="Step 1: Basic details" subtitle="Create the draft round and define the reporting period with clear start and end dates.">
+        <Card title="Step 1: Basic details" subtitle="Create the draft round and choose the exact DHIS2 month range to pull.">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-semibold text-brand-text">Assessment name</label>
               <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-brand-text">Period type</label>
-              <Select
-                value={form.period_type}
-                onChange={(event) => {
-                  const periodType = event.target.value as PeriodType;
-                  setForm({
-                    ...form,
-                    period_type: periodType,
-                    reporting_period: deriveReportingPeriod(periodType, form.start_date, form.end_date, form.reporting_period),
-                  });
-                }}
-              >
-                {periodTypeOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </Select>
-            </div>
             <div className="rounded-2xl border border-brand-border bg-brand-surface p-4 md:col-span-2">
-              <p className="text-sm font-semibold text-brand-text">Reporting period</p>
+              <p className="text-sm font-semibold text-brand-text">Assessment period for DHIS2 sync</p>
               <p className="mt-1 text-xs text-brand-muted">
-                The DHIS2 period code is generated automatically from the dates and period type. You normally do not need to type it.
+                Select the first and last month that DHIS2 should pull. The system will request every monthly DHIS2 period in that range.
               </p>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-brand-text">DHIS2 period code</label>
+                  <label className="mb-2 block text-sm font-semibold text-brand-text">From month</label>
                   <Input
-                    placeholder="Auto-generated, e.g. 202603"
-                    value={form.reporting_period}
-                    readOnly={form.period_type !== "CUSTOM"}
-                    onChange={(event) => setForm({ ...form, reporting_period: event.target.value })}
-                  />
-                  <p className="mt-2 text-xs text-brand-muted">
-                    {form.period_type === "CUSTOM"
-                      ? "Custom periods are editable if DHIS2 requires a special code."
-                      : "Generated from the start date for DHIS2 syncing."}
-                  </p>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-brand-text">Start date</label>
-                  <Input
-                    type="date"
-                    value={form.start_date ?? ""}
+                    type="month"
+                    value={toMonthInputValue(form.start_date)}
                     onChange={(event) => {
-                      const startDate = event.target.value || null;
+                      const startDate = toMonthStartDate(event.target.value);
+                      const reportingPeriod = deriveMonthRangeLabel(startDate, form.end_date, form.reporting_period);
                       setForm({
                         ...form,
+                        period_type: "CUSTOM",
                         start_date: startDate,
-                        reporting_period: deriveReportingPeriod(form.period_type, startDate, form.end_date, form.reporting_period),
+                        reporting_period: reportingPeriod,
                       });
                     }}
                   />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-brand-text">End date</label>
+                  <label className="mb-2 block text-sm font-semibold text-brand-text">To month</label>
                   <Input
-                    type="date"
-                    value={form.end_date ?? ""}
+                    type="month"
+                    value={toMonthInputValue(form.end_date)}
                     onChange={(event) => {
-                      const endDate = event.target.value || null;
+                      const endDate = toMonthEndDate(event.target.value);
+                      const reportingPeriod = deriveMonthRangeLabel(form.start_date, endDate, form.reporting_period);
                       setForm({
                         ...form,
+                        period_type: "CUSTOM",
                         end_date: endDate,
-                        reporting_period: deriveReportingPeriod(form.period_type, form.start_date, endDate, form.reporting_period),
+                        reporting_period: reportingPeriod,
                       });
                     }}
                   />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-brand-text">Selected DHIS2 period</label>
+                  <Input value={form.reporting_period} readOnly placeholder="Example: 2025-10 to 2025-12" />
+                  <p className="mt-2 text-xs text-brand-muted">
+                    Example: October 2025 to December 2025 pulls 202510, 202511, and 202512.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1002,7 +1011,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
           </div>
           <div className="mt-5 flex gap-2">
             <Button onClick={() => void saveBasicDetails()} disabled={!canEditDraft || saving}>
-              {saving ? "Saving..." : round ? "Update draft details" : "Create draft round"}
+              {saving ? "Saving..." : round ? "Update assessment" : "Create draft assessment"}
             </Button>
             {round ? (
               <Button variant="secondary" onClick={() => setActiveStep(1)}>
@@ -1125,7 +1134,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
             </div>
             <div className="mt-5 flex gap-2">
               <Button onClick={() => void saveIndicators()} disabled={!canEditDraft || saving || !round}>
-                {saving ? "Saving..." : "Save selected indicators"}
+                {saving ? "Saving..." : "Update assessment indicators"}
               </Button>
               <Button variant="secondary" onClick={() => setActiveStep(2)} disabled={!round}>
                 Continue
@@ -1282,7 +1291,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
               </div>
             <div className="mt-5 flex gap-2">
               <Button onClick={() => void saveFacilities()} disabled={!canEditDraft || saving || !round}>
-                {saving ? "Saving..." : "Save selected facilities"}
+                {saving ? "Saving..." : "Update assessment facilities"}
               </Button>
             </div>
           </Card>
@@ -1528,15 +1537,15 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
 
       {activeStep === 4 ? (
         <div className="space-y-6">
-          <Card title="Step 5: Review and publish" subtitle="Review one long checklist of the entire project. Every section can still be edited before publishing.">
+          <Card title="Step 5: Review and update" subtitle="Review one long checklist of the entire project. Every section can still be edited and updated for assessors.">
             <div className="space-y-5">
               <div className="rounded-2xl bg-brand-navy p-5 text-white">
                 <p className="text-sm text-slate-200">Assessment package readiness</p>
                 <p className="mt-2 text-2xl font-bold">
-                  {round?.status === "PUBLISHED" ? "Ready for assessors" : "Draft package in progress"}
+                  {round?.status === "PUBLISHED" ? "Ready for assessors" : "Assessment package in progress"}
                 </p>
                 <p className="mt-2 text-sm text-slate-200">
-                  Review everything below. If anything needs to change, use the Edit button in that section, update it, and return here before publishing.
+                  Review everything below. If anything needs to change, use the Edit button in that section, press Update assessment, and assessors will receive the changes automatically.
                 </p>
               </div>
 
@@ -1552,10 +1561,10 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                 </div>
                 <div className="mt-4 space-y-2 text-sm text-brand-text">
                   <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Assessment name:</span> {form.name}</div>
-                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Reporting period:</span> {form.reporting_period}</div>
-                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Period type:</span> {form.period_type}</div>
-                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Start date:</span> {form.start_date ?? "Not set"}</div>
-                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">End date:</span> {form.end_date ?? "Not set"}</div>
+                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Assessment period:</span> {form.reporting_period}</div>
+                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">From month:</span> {toMonthInputValue(form.start_date) || "Not set"}</div>
+                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">To month:</span> {toMonthInputValue(form.end_date) || "Not set"}</div>
+                  <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">DHIS2 monthly periods:</span> {form.start_date && form.end_date ? "Automatically pulled month-by-month from this range" : "Not ready until both months are selected"}</div>
                   <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Deadline:</span> {form.deadline ?? "No deadline set"}</div>
                   <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Description:</span> {form.description?.trim() || "No description provided"}</div>
                   <div className="rounded-xl bg-brand-surface px-3 py-2"><span className="font-semibold">Notes:</span> {form.notes?.trim() || "No notes provided"}</div>
@@ -1701,7 +1710,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                       Offline preparation
                     </div>
                     <p className="mt-2 text-brand-text">
-                      Pre-sync DHIS2 values before publishing so group members see system figures as soon as they open their assigned assessment.
+                      Pre-sync DHIS2 values so group members see system figures as soon as they open or refresh their assigned assessment.
                     </p>
                   </div>
                   <label className="flex items-center gap-2 text-sm text-brand-text">
@@ -1709,7 +1718,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                       type="checkbox"
                       checked={allowUnassignedPublish}
                       onChange={(event) => setAllowUnassignedPublish(event.target.checked)}
-                      disabled={!canEditDraft}
+                      disabled={!canPublishDraft}
                     />
                     Allow publishing even if some facilities still have no shared group login
                   </label>
@@ -1725,7 +1734,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
               >
                 {syncingDhis2 ? "Syncing DHIS2..." : "Pre-sync DHIS2 values"}
               </Button>
-              <Button variant="danger" onClick={() => void publishRound()} disabled={!canEditDraft || saving || !round}>
+              <Button variant="danger" onClick={() => void publishRound()} disabled={!canPublishDraft || saving || !round}>
                 {saving ? "Publishing..." : "Publish round"}
               </Button>
               {round ? (

@@ -82,6 +82,13 @@ export const syncService = {
         return buildResult("RELOGIN_REQUIRED", "Please log in again to sync your saved draft.");
       }
 
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        const message =
+          "The manager deleted this assessment from the server. Your assessor-side draft is still saved on this device so it can be reused if the assessment is recreated.";
+        await markDraftSyncFailed(assessmentFacilityId, message);
+        return buildResult("FAILED", message, 0, 1);
+      }
+
       const message =
         axios.isAxiosError(error) && typeof error.response?.data?.detail === "string"
           ? error.response.data.detail

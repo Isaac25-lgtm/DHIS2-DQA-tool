@@ -129,8 +129,9 @@ export function AssessmentWorkspacePage() {
 
     setLoading(true);
     setError(null);
+    let localDraft: AssessmentDraft | null = null;
     try {
-      const localDraft = !isReviewRoute ? await getAssessmentDraft(assessmentFacilityId) : null;
+      localDraft = !isReviewRoute ? await getAssessmentDraft(assessmentFacilityId) : null;
 
       if (!isOnline && !isReviewRoute) {
         const cached = await getCachedAssessment(assessmentFacilityId);
@@ -173,6 +174,23 @@ export function AssessmentWorkspacePage() {
         await saveCachedAssessment(nextWorkspace).catch(() => undefined);
       }
     } catch {
+      if (!isReviewRoute) {
+        const cached = await getCachedAssessment(assessmentFacilityId).catch(() => null);
+        if (cached) {
+          const cachedWorkspace = cached.workspace;
+          const mergedValues = mergeDraftIntoValues(buildEditableValues(cachedWorkspace), localDraft);
+          setWorkspace(cachedWorkspace);
+          setEditableValues(mergedValues);
+          setGeneralAssessmentComment(
+            localDraft?.general_assessment_comment ?? cachedWorkspace.assessment_facility.general_assessment_comment ?? "",
+          );
+          setSeedDraft(localDraft);
+          setHasConflict(Boolean(localDraft && localDraft.sync_status !== "SYNCED"));
+          setMessage("The server copy is not available. This assessor-side cached copy is still saved on this device.");
+          setLoading(false);
+          return;
+        }
+      }
       setError("Unable to load the assessment workspace right now.");
     } finally {
       setLoading(false);

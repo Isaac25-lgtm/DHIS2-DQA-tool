@@ -54,12 +54,14 @@ def export_submissions(
     request: Request,
     db: DbSession,
     assessment_round_id: uuid.UUID | None = None,
+    assessment_facility_id: uuid.UUID | None = None,
     team_lead_user_id: uuid.UUID | None = None,
     current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.REVIEWER)),
 ) -> StreamingResponse:
     content = build_submissions_workbook(
         db,
         assessment_round_id=assessment_round_id,
+        assessment_facility_id=assessment_facility_id,
         team_lead_user_id=team_lead_user_id,
     )
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M")

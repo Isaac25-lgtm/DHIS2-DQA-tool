@@ -72,6 +72,8 @@ class SubmissionValueRowResponse(BaseModel):
     severity: str | None
     flag: str
     comparison_notes: str | None
+    assessor_comment: str | None
+    manager_comment: str | None
 
 
 class SubmissionDetailResponse(BaseModel):

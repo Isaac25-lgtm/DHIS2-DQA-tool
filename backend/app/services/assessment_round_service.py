@@ -15,6 +15,8 @@ from app.models.assessment_facility_team_member import AssessmentFacilityTeamMem
 from app.models.assessment_round import AssessmentRound
 from app.models.assessment_round_indicator import AssessmentRoundIndicator
 from app.models.base import AssessmentFacilityStatus, AssessmentRoundStatus, PeriodType, UserRole
+from app.models.base import DqaValueStatus
+from app.models.dqa_value import DqaValue
 from app.models.facility import Facility
 from app.models.indicator import Indicator
 from app.models.source_document_requirement import SourceDocumentRequirement
@@ -86,11 +88,56 @@ def _editable_round_or_404(db: Session, round_id: uuid.UUID) -> AssessmentRound:
 
 
 def _ensure_round_is_editable(assessment_round: AssessmentRound) -> None:
+    if assessment_round.status in {AssessmentRoundStatus.CLOSED, AssessmentRoundStatus.ARCHIVED}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Closed or archived assessment rounds cannot be edited.",
+        )
+
+
+def _ensure_round_can_publish(assessment_round: AssessmentRound) -> None:
     if assessment_round.status != AssessmentRoundStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Only draft assessment rounds can be edited in the current workflow.",
+            detail="Only draft assessment rounds can be published.",
         )
+
+
+def _touch_round(assessment_round: AssessmentRound) -> None:
+    assessment_round.updated_at = datetime.now(UTC)
+
+
+def _sync_dqa_rows_to_selected_indicators(db: Session, assessment_round: AssessmentRound) -> None:
+    facility_ids = [item.id for item in assessment_round.selected_facilities]
+    selected_indicator_ids = [item.indicator_id for item in assessment_round.selected_indicators]
+    selected_indicator_id_set = set(selected_indicator_ids)
+    if not facility_ids:
+        return
+
+    existing_values = list(
+        db.scalars(select(DqaValue).where(DqaValue.assessment_facility_id.in_(facility_ids)))
+    )
+    existing_pairs: set[tuple[uuid.UUID, uuid.UUID]] = set()
+    for value in existing_values:
+        if value.indicator_id not in selected_indicator_id_set:
+            db.delete(value)
+            continue
+        existing_pairs.add((value.assessment_facility_id, value.indicator_id))
+
+    for assessment_facility in assessment_round.selected_facilities:
+        for indicator_id in selected_indicator_ids:
+            pair = (assessment_facility.id, indicator_id)
+            if pair in existing_pairs:
+                continue
+            db.add(
+                DqaValue(
+                    assessment_facility_id=assessment_facility.id,
+                    indicator_id=indicator_id,
+                    value_status=DqaValueStatus.NOT_STARTED,
+                    sync_status="SERVER_SAVED",
+                )
+            )
+            existing_pairs.add(pair)
 
 
 def _build_source_documents(
@@ -155,6 +202,7 @@ def update_assessment_round(db: Session, assessment_round: AssessmentRound, payl
 
     assessment_round.source_document_requirements.clear()
     assessment_round.source_document_requirements.extend(_build_source_documents(payload.source_document_requirements))
+    _touch_round(assessment_round)
     db.flush()
     db.refresh(assessment_round)
     return assessment_round
@@ -217,8 +265,57 @@ def archive_assessment_round(db: Session, assessment_round: AssessmentRound) -> 
     return assessment_round
 
 
+def _assigned_assessor_ids_for_round(assessment_round: AssessmentRound) -> set[uuid.UUID]:
+    assessor_ids: set[uuid.UUID] = set()
+    for assessment_facility in assessment_round.selected_facilities:
+        if assessment_facility.assigned_assessor_id:
+            assessor_ids.add(assessment_facility.assigned_assessor_id)
+        assessor_ids.update(
+            member.user_id
+            for member in assessment_facility.team_members
+            if member.is_active
+        )
+    return assessor_ids
+
+
+def _assessor_has_remaining_assignments(db: Session, assessor_id: uuid.UUID) -> bool:
+    assigned_facility_id = db.scalar(
+        select(AssessmentFacility.id).where(AssessmentFacility.assigned_assessor_id == assessor_id).limit(1)
+    )
+    if assigned_facility_id:
+        return True
+    team_member_id = db.scalar(
+        select(AssessmentFacilityTeamMember.id).where(AssessmentFacilityTeamMember.user_id == assessor_id).limit(1)
+    )
+    return bool(team_member_id)
+
+
+def _delete_orphaned_assessor_logins(db: Session, assessor_ids: set[uuid.UUID]) -> list[User]:
+    if not assessor_ids:
+        return []
+
+    users = list(
+        db.scalars(
+            select(User).where(
+                User.id.in_(assessor_ids),
+                User.role == UserRole.ASSESSOR,
+            )
+        )
+    )
+    deleted_users: list[User] = []
+    for user in users:
+        if _assessor_has_remaining_assignments(db, user.id):
+            continue
+        deleted_users.append(user)
+        db.delete(user)
+    return deleted_users
+
+
 def delete_assessment_round(db: Session, assessment_round: AssessmentRound) -> None:
+    assessor_ids = _assigned_assessor_ids_for_round(assessment_round)
     db.delete(assessment_round)
+    db.flush()
+    _delete_orphaned_assessor_logins(db, assessor_ids)
     db.flush()
 
 
@@ -300,6 +397,8 @@ def set_round_indicators(
         )
 
     assessment_round.selected_indicators.sort(key=lambda value: value.display_order)
+    _sync_dqa_rows_to_selected_indicators(db, assessment_round)
+    _touch_round(assessment_round)
     db.flush()
     db.refresh(assessment_round)
     return assessment_round.selected_indicators
@@ -311,6 +410,8 @@ def remove_round_indicator(db: Session, assessment_round: AssessmentRound, indic
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Selected indicator not found in round.")
     assessment_round.selected_indicators.remove(target)
+    _sync_dqa_rows_to_selected_indicators(db, assessment_round)
+    _touch_round(assessment_round)
     db.flush()
 
 
@@ -370,6 +471,9 @@ def set_round_facilities(
         )
 
     db.flush()
+    _sync_dqa_rows_to_selected_indicators(db, assessment_round)
+    _touch_round(assessment_round)
+    db.flush()
     db.refresh(assessment_round)
     return assessment_round.selected_facilities
 
@@ -380,7 +484,7 @@ def publish_assessment_round(
     *,
     allow_unassigned_facilities: bool,
 ) -> AssessmentRound:
-    _ensure_round_is_editable(assessment_round)
+    _ensure_round_can_publish(assessment_round)
     if not assessment_round.selected_indicators:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Add at least one indicator before publishing.")
     if not assessment_round.selected_facilities:

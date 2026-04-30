@@ -44,18 +44,37 @@ function DiffPill({ value }: { value: number | null }) {
   return <Badge tone={tone} className="font-mono-ui">{formatPct(value)}</Badge>;
 }
 
+async function extractReportErrorMessage(error: unknown): Promise<string> {
+  const candidate = error as { response?: { data?: Blob | { detail?: string } } };
+  const payload = candidate.response?.data;
+  if (payload instanceof Blob) {
+    try {
+      const text = await payload.text();
+      const parsed = JSON.parse(text) as { detail?: string };
+      return parsed.detail ?? "The report could not be generated or downloaded.";
+    } catch {
+      return "The report could not be generated or downloaded.";
+    }
+  }
+  if (payload && typeof payload === "object" && "detail" in payload) {
+    return String(payload.detail ?? "The report could not be generated or downloaded.");
+  }
+  return "The report could not be generated or downloaded.";
+}
+
 export function SubmissionsPage() {
   const navigate = useNavigate();
   const [rounds, setRounds] = useState<AssessmentRoundListItem[]>([]);
   const [selectedRoundId, setSelectedRoundId] = useState("");
   const [selectedTeamLeadId, setSelectedTeamLeadId] = useState("");
+  const [selectedFacilityId, setSelectedFacilityId] = useState("");
   const [dashboard, setDashboard] = useState<SubmissionDashboard | null>(null);
   const [detail, setDetail] = useState<SubmissionDetail | null>(null);
   const [cumulativeDetails, setCumulativeDetails] = useState<SubmissionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [reportType, setReportType] = useState<ReportType>("CONSOLIDATED_UCMB_DQA_REPORT");
-  const [includeComments, setIncludeComments] = useState(false);
+  const [includeComments, setIncludeComments] = useState(true);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -235,7 +254,10 @@ export function SubmissionsPage() {
   );
 
   const stats = dashboard?.stats;
-  const cumulativeRows = cumulativeDetails.flatMap((submission) =>
+  const visibleCumulativeDetails = selectedFacilityId
+    ? cumulativeDetails.filter((submission) => submission.summary.assessment_facility_id === selectedFacilityId)
+    : cumulativeDetails;
+  const cumulativeRows = visibleCumulativeDetails.flatMap((submission) =>
     submission.values.map((value) => ({
       submission,
       value,
@@ -245,6 +267,7 @@ export function SubmissionsPage() {
     })),
   );
   const selectedRound = rounds.find((round) => round.id === selectedRoundId) ?? null;
+  const facilityOptions = dashboard?.submissions ?? [];
   const canGenerateRoundReport = Boolean(selectedRoundId);
 
   const handleGenerateReport = async (downloadDocx = false) => {
@@ -263,12 +286,13 @@ export function SubmissionsPage() {
       });
       setMessage(downloadDocx ? "Report generated. Opening Word download..." : "Report generated. Opening report review page...");
       if (downloadDocx) {
-        await reportService.reviewReport(report.id).catch(() => undefined);
-        await reportService.approveReport(report.id).catch(() => undefined);
         await exportService.downloadDocx(report.id);
+        setMessage("Word report generated and download started.");
       } else {
         navigate(`/reports/${report.id}`);
       }
+    } catch (error) {
+      setMessage(await extractReportErrorMessage(error));
     } finally {
       setGeneratingReport(false);
     }
@@ -296,7 +320,7 @@ export function SubmissionsPage() {
             </Button>
             <Button
               className="bg-white text-brand-navy hover:bg-cyan-50"
-              onClick={() => submissionService.downloadCumulativeXlsx(selectedRoundId || null, selectedTeamLeadId || null)}
+              onClick={() => submissionService.downloadCumulativeXlsx(selectedRoundId || null, selectedTeamLeadId || null, selectedFacilityId || null)}
             >
               <Download size={16} />
               Download cumulative Excel
@@ -338,7 +362,7 @@ export function SubmissionsPage() {
               />
               <span>
                 <span className="block text-sm font-semibold text-brand-text">Include comments</span>
-                <span className="mt-1 block text-xs text-brand-muted">Off by default for privacy and clean reporting.</span>
+                <span className="mt-1 block text-xs text-brand-muted">Includes field comments and manager notes in the report.</span>
               </span>
             </label>
           </div>
@@ -365,7 +389,7 @@ export function SubmissionsPage() {
       </Card>
 
       <Card title="Filter submissions" subtitle="Each facility is tied to one shared group account. Select a group account to view only that group's facilities and statistics.">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           <label>
             <span className="mb-2 block text-sm font-semibold text-brand-text">Assessment round</span>
             <select
@@ -374,6 +398,7 @@ export function SubmissionsPage() {
               onChange={(event) => {
                 setSelectedRoundId(event.target.value);
                 setSelectedTeamLeadId("");
+                setSelectedFacilityId("");
                 setDetail(null);
               }}
             >
@@ -392,6 +417,7 @@ export function SubmissionsPage() {
               value={selectedTeamLeadId}
               onChange={(event) => {
                 setSelectedTeamLeadId(event.target.value);
+                setSelectedFacilityId("");
                 setDetail(null);
               }}
             >
@@ -399,6 +425,24 @@ export function SubmissionsPage() {
               {(dashboard?.team_leads ?? []).map((lead) => (
                 <option key={lead.user_id} value={lead.user_id}>
                   {lead.full_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="mb-2 block text-sm font-semibold text-brand-text">Facility</span>
+            <select
+              className="w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+              value={selectedFacilityId}
+              onChange={(event) => {
+                setSelectedFacilityId(event.target.value);
+                setDetail(null);
+              }}
+            >
+              <option value="">All visible facilities</option>
+              {facilityOptions.map((submission) => (
+                <option key={submission.assessment_facility_id} value={submission.assessment_facility_id}>
+                  {submission.facility_name}
                 </option>
               ))}
             </select>
@@ -433,7 +477,7 @@ export function SubmissionsPage() {
 
       <Card title="Submitted assessments" subtitle="Only assessments sent to the manager appear here.">
         <Table
-          data={dashboard?.submissions ?? []}
+          data={(dashboard?.submissions ?? []).filter((item) => !selectedFacilityId || item.assessment_facility_id === selectedFacilityId)}
           columns={submissionColumns}
           emptyMessage={loading ? "Loading submissions..." : "No submitted assessments yet."}
         />

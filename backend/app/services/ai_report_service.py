@@ -102,6 +102,11 @@ Return a clean report narrative using Markdown-style headings and concise tables
 
 Use only the structured JSON data provided by the system. In the Team Comments and Contextual Observations section, summarize only comments present in the input, connect them to the relevant facility, indicator, source document, or corrective action, and clearly distinguish comment-based context from numeric DQA findings. If comments are not included, state that team comments were not included in the report payload."""
 
+DEEPSEEK_FAST_FALLBACK_MODEL = "deepseek-v4-flash"
+DEEPSEEK_PRO_TIMEOUT_SECONDS = 25.0
+DEEPSEEK_FLASH_TIMEOUT_SECONDS = 55.0
+DEEPSEEK_MAX_COMPLETION_TOKENS = 3000
+
 
 def _invoke_openai_report_generation(structured_input: dict, *, model: str, api_key: str) -> str:
     payload = {
@@ -140,18 +145,30 @@ def _invoke_openai_report_generation(structured_input: dict, *, model: str, api_
     raise ValueError("AI provider returned no usable report text.")
 
 
-def _invoke_deepseek_report_generation(structured_input: dict, *, model: str, api_key: str) -> str:
+def _deepseek_candidate_models(structured_input: dict, preferred_model: str) -> list[str]:
+    payload_size = len(json.dumps(structured_input, ensure_ascii=True))
+    normalized = (preferred_model or "deepseek-v4-pro").strip() or "deepseek-v4-pro"
+    is_large_report = payload_size >= 12_000 or structured_input.get("report_scope") != "facility"
+    candidates: list[str] = []
+    if is_large_report and normalized != DEEPSEEK_FAST_FALLBACK_MODEL:
+        candidates.append(DEEPSEEK_FAST_FALLBACK_MODEL)
+    candidates.append(normalized)
+    if normalized != DEEPSEEK_FAST_FALLBACK_MODEL:
+        candidates.append(DEEPSEEK_FAST_FALLBACK_MODEL)
+    return list(dict.fromkeys(candidates))
+
+
+def _invoke_deepseek_once(structured_input: dict, *, model: str, api_key: str, timeout_seconds: float) -> str:
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(structured_input, ensure_ascii=True)},
         ],
-        "thinking": {"type": "enabled"},
-        "reasoning_effort": "high",
         "temperature": 0.2,
+        "max_tokens": DEEPSEEK_MAX_COMPLETION_TOKENS,
     }
-    with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+    with httpx.Client(timeout=httpx.Timeout(timeout_seconds, connect=10.0)) as client:
         response = client.post(
             "https://api.deepseek.com/chat/completions",
             headers={
@@ -169,6 +186,30 @@ def _invoke_deepseek_report_generation(structured_input: dict, *, model: str, ap
         if isinstance(content, str) and content.strip():
             return content.strip()
     raise ValueError("DeepSeek returned no usable report text.")
+
+
+def _invoke_deepseek_report_generation(structured_input: dict, *, model: str, api_key: str) -> tuple[str, str]:
+    last_error: Exception | None = None
+    candidate_models = _deepseek_candidate_models(structured_input, model)
+    for candidate_model in candidate_models:
+        timeout_seconds = (
+            DEEPSEEK_FLASH_TIMEOUT_SECONDS
+            if candidate_model == DEEPSEEK_FAST_FALLBACK_MODEL
+            else DEEPSEEK_PRO_TIMEOUT_SECONDS
+        )
+        try:
+            content = _invoke_deepseek_once(
+                structured_input,
+                model=candidate_model,
+                api_key=api_key,
+                timeout_seconds=timeout_seconds,
+            )
+            return content, candidate_model
+        except Exception as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise ValueError("DeepSeek generation failed before any model could be attempted.")
 
 
 def generate_report(db: Session, payload: ReportGenerateRequest, current_user: User) -> Report:
@@ -198,11 +239,12 @@ def generate_report(db: Session, payload: ReportGenerateRequest, current_user: U
             log_error = str(exc)
     elif settings.ai_api_key and provider == "deepseek":
         try:
-            generated_content = _invoke_deepseek_report_generation(
+            generated_content, resolved_model = _invoke_deepseek_report_generation(
                 structured_input,
                 model=settings.ai_model or "deepseek-v4-pro",
                 api_key=settings.ai_api_key,
             )
+            ai_model = resolved_model
             ai_status = AiGenerationLogStatus.SUCCESS
             log_output = generated_content
         except Exception as exc:  # pragma: no cover - network/provider branch

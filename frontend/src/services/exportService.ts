@@ -1,7 +1,12 @@
 import { api } from "./api";
 
+const REPORT_EXPORT_TIMEOUT_MS = 180000;
+
 async function downloadBlob(url: string, fallbackFileName: string) {
-  const response = await api.get(url, { responseType: "blob" });
+  const response = await api.get(url, {
+    responseType: "blob",
+    timeout: REPORT_EXPORT_TIMEOUT_MS,
+  });
   const fileName =
     response.headers["content-disposition"]?.match(/filename=\"?([^"]+)\"?/)?.[1] ??
     fallbackFileName;

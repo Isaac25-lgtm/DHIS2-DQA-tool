@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -35,10 +36,10 @@ def assign_assessors_to_facilities(
     assessment_round: AssessmentRound,
     payload: AssessmentFacilityAssignRequest,
 ) -> list[AssessmentFacility]:
-    if assessment_round.status != AssessmentRoundStatus.DRAFT:
+    if assessment_round.status in {AssessmentRoundStatus.CLOSED, AssessmentRoundStatus.ARCHIVED}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Facility assignments can only be changed while the round is in draft.",
+            detail="Facility assignments cannot be changed after the round is closed or archived.",
         )
 
     facility_map = {item.facility_id: item for item in assessment_round.selected_facilities}
@@ -86,6 +87,7 @@ def assign_assessors_to_facilities(
         if selected_facility.status == AssessmentFacilityStatus.NOT_STARTED:
             selected_facility.status = AssessmentFacilityStatus.ASSIGNED
 
+    assessment_round.updated_at = datetime.now(UTC)
     db.flush()
     db.refresh(assessment_round)
     return assessment_round.selected_facilities
@@ -191,8 +193,9 @@ def get_assessment_package_for_assessor(
     ensure_dqa_rows_exist(db, assessment_facility)
     ordered_indicator_ids = [item.indicator_id for item in assessment_round.selected_indicators]
     value_order = {indicator_id: index for index, indicator_id in enumerate(ordered_indicator_ids)}
+    ordered_indicator_id_set = set(ordered_indicator_ids)
     ordered_values = sorted(
-        assessment_facility.dqa_values,
+        [value for value in assessment_facility.dqa_values if value.indicator_id in ordered_indicator_id_set],
         key=lambda item: value_order.get(item.indicator_id, 9999),
     )
 

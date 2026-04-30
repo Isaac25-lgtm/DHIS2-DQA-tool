@@ -58,7 +58,8 @@ export function ReportDetailPage() {
   const canEdit = user?.role === "MANAGER";
   const canReview = user?.role === "MANAGER" || user?.role === "REVIEWER";
   const canApprove = user?.role === "MANAGER";
-  const canExport = report && (report.status === "APPROVED" || report.status === "EXPORTED");
+  const canExportDocx = report && ["GENERATED", "REVIEWED", "APPROVED", "EXPORTED"].includes(report.status);
+  const canExportFinal = report && (report.status === "APPROVED" || report.status === "EXPORTED");
 
   const metadata = useMemo(
     () =>
@@ -162,12 +163,12 @@ export function ReportDetailPage() {
         </Card>
       </section>
 
-      <Card title="Export" subtitle="Approved reports can be exported without changing the underlying DQA data.">
+      <Card title="Export" subtitle="Word reports can be downloaded immediately. Approve the report before final PDF or Excel export.">
         <div className="flex flex-wrap gap-3">
           <Button
             variant="secondary"
             className="gap-2"
-            disabled={!canExport}
+            disabled={!canExportDocx}
             onClick={() => reportId && exportService.downloadDocx(reportId).then(() => setMessage("DOCX export started."))}
           >
             <FileDown size={16} />
@@ -176,7 +177,7 @@ export function ReportDetailPage() {
           <Button
             variant="secondary"
             className="gap-2"
-            disabled={!canExport}
+            disabled={!canExportFinal}
             onClick={async () => {
               if (!reportId) return;
               try {
@@ -193,7 +194,7 @@ export function ReportDetailPage() {
           <Button
             variant="secondary"
             className="gap-2"
-            disabled={!canExport}
+            disabled={!canExportFinal}
             onClick={() => reportId && exportService.downloadXlsx(reportId).then(() => setMessage("XLSX export started."))}
           >
             <FileDown size={16} />
