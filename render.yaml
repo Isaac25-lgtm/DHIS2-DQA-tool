@@ -1,26 +1,27 @@
 # Render Blueprint for the UCMB HMIS 105 DQA Platform.
 #
-# Database is EXTERNAL Neon Postgres — Render does not provision the database.
+# Database is EXTERNAL Neon Postgres - Render does not provision the database.
 # Provide the full Neon connection string (with ?sslmode=require) via the
 # DATABASE_URL env var in the Render dashboard during Blueprint apply.
 #
-# See README.md → "Deploy to Render with Neon Postgres" for the full guide.
+# See README.md "Deploy to Render with Neon Postgres" for the full guide.
 
 services:
   - type: web
     name: ucmb-dqa-backend
     runtime: python
+    plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /api/health
     envVars:
       - key: APP_NAME
-        value: UCMB HMIS 105 DQA Platform
+        value: "UCMB HMIS 105 DQA Platform"
       - key: APP_VERSION
-        value: 0.6.0
+        value: "0.6.0"
       - key: ENVIRONMENT
-        value: production
+        value: "production"
       # Paste your Neon pooled connection string in the Render dashboard.
       # Example: postgresql://USER:PASSWORD@ep-xxxxxxx-pooler.REGION.aws.neon.tech/ucmb_dqa?sslmode=require
       - key: DATABASE_URL
@@ -28,9 +29,9 @@ services:
       - key: SECRET_KEY
         sync: false
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: 60
+        value: "60"
       - key: DHIS2_BASE_URL
-        value: https://hmis.health.go.ug/api
+        value: "https://hmis.health.go.ug/api"
       - key: AI_API_KEY
         sync: false
       - key: AI_PROVIDER
@@ -41,14 +42,15 @@ services:
       - key: CORS_ORIGINS
         sync: false
       - key: SEED_DEFAULT_MANAGER
-        value: false
+        value: "false"
 
   - type: web
     name: ucmb-dqa-frontend
     runtime: static
+    plan: free
     rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
+    buildCommand: "npm ci && npm run build"
+    staticPublishPath: ./dist
     envVars:
       # Set to the public URL of the backend service plus /api,
       # e.g. https://ucmb-dqa-backend.onrender.com/api
@@ -56,5 +58,5 @@ services:
         sync: false
     routes:
       - type: rewrite
-        source: /*
-        destination: /index.html
+        source: "/*"
+        destination: "/index.html"
