@@ -1,25 +1,42 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import get_settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 settings = get_settings()
 ALGORITHM = "HS256"
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# bcrypt has a 72-byte input limit. passlib used to silently work around this.
+# We use SHA-256 pre-hashing as our own work-around so passwords longer than 72
+# bytes still verify deterministically. Hashes generated this way remain
+# standard $2b$ bcrypt hashes, so they're interchangeable with passlib output
+# for any password under the limit.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _normalize_password(password: str) -> bytes:
+    encoded = password.encode("utf-8")
+    if len(encoded) <= _BCRYPT_MAX_BYTES:
+        return encoded
+    import hashlib
+    return hashlib.sha256(encoded).hexdigest().encode("ascii")
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(_normalize_password(plain_password), hashed_password.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(_normalize_password(password), bcrypt.gensalt()).decode("utf-8")
 
 
 def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
