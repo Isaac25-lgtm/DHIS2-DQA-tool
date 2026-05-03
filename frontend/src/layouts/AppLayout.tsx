@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "../components/navigation/Sidebar";
 import { Topbar } from "../components/navigation/Topbar";
 import { WorkflowGuide } from "../components/navigation/WorkflowGuide";
+import { Dhis2StatusBanner } from "../components/sync/Dhis2StatusBanner";
 import { BrandLogo } from "../components/ui/BrandLogo";
 import { useAuth } from "../hooks/useAuth";
 
@@ -29,6 +30,9 @@ export function AppLayout({ children }: { children?: ReactNode }) {
       <div className="min-w-0 flex-1">
         <Topbar />
         <main className="page-shell">
+          <div className="mb-4">
+            <Dhis2StatusBanner />
+          </div>
           <WorkflowGuide />
           {children ?? <Outlet />}
         </main>

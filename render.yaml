@@ -16,6 +16,12 @@ services:
     startCommand: "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /api/health
     envVars:
+      # Pin Python to the version we test against locally. Render's auto-detection
+      # has been observed to pick newer Python (3.14) which exposes a different
+      # SQLAlchemy/psycopg2 strictness level. Keep this aligned with backend/runtime.txt
+      # and backend/.python-version.
+      - key: PYTHON_VERSION
+        value: "3.12.2"
       - key: APP_NAME
         value: "UCMB HMIS 105 DQA Platform"
       - key: APP_VERSION

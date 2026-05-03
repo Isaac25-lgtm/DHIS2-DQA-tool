@@ -102,16 +102,71 @@ def clear_dhis2_session() -> None:
     _DHIS2_ACTIVE_SESSION.clear()
 
 
+def probe_dhis2_reachability(base_url: str | None = None) -> bool:
+    """Lightweight, credential-free reachability check.
+
+    Hits the DHIS2 base URL with a short-timeout GET and treats any HTTP response
+    (even 401 / 403) as 'reachable' — what we care about is whether the server is
+    on the network. Connection failures or timeouts return False.
+    """
+    target = (base_url or _base_url()).rstrip("/")
+    if not target:
+        return False
+    try:
+        with httpx.Client(timeout=httpx.Timeout(5.0, connect=4.0)) as client:
+            response = client.get(target)
+        return 100 <= response.status_code < 600
+    except httpx.HTTPError:
+        return False
+
+
 def check_dhis2_connection() -> Dhis2ConnectionStatus:
+    """Report DHIS2 status to callers.
+
+    Returns three independent signals:
+      reachability: "reachable" | "unreachable" | "not_configured"
+      signed_in:    has a manager signed in (server-side session present)
+      connected:    legacy boolean — true only if reachable AND signed in AND we can
+                    successfully call /me.json with the cached credentials.
+    """
     checked_at = datetime.now(UTC)
     base_url = _base_url()
+
+    if not base_url:
+        return Dhis2ConnectionStatus(
+            connected=False,
+            signed_in=False,
+            base_url="",
+            last_checked_at=checked_at,
+            message="DHIS2 base URL is not configured.",
+            reachability="not_configured",
+        )
+
+    reachable = probe_dhis2_reachability(base_url)
+    reachability: str = "reachable" if reachable else "unreachable"
+
+    if not reachable:
+        return Dhis2ConnectionStatus(
+            connected=False,
+            signed_in=is_dhis2_configured(),
+            base_url=base_url,
+            last_checked_at=checked_at,
+            message=(
+                "DHIS2 is currently unreachable. The platform will continue to accept "
+                "assessment data; managers and assessors can sync DHIS2 values once "
+                "the connection returns."
+            ),
+            reachability="unreachable",
+        )
+
     if not is_dhis2_configured():
         return Dhis2ConnectionStatus(
             connected=False,
             signed_in=False,
             base_url=base_url,
             last_checked_at=checked_at,
-            message="DHIS2 is not signed in. A manager or assessor must sign in to DHIS2 from Settings.",
+            message="DHIS2 is reachable but no manager is signed in. Sign in from Settings to enable live DHIS2 sync.",
+            reachability=reachability,
         )
 
     try:
@@ -123,7 +178,8 @@ def check_dhis2_connection() -> Dhis2ConnectionStatus:
             signed_in=True,
             base_url=base_url,
             last_checked_at=checked_at,
-            message="DHIS2 connection successful",
+            message="DHIS2 connection successful.",
+            reachability=reachability,
         )
     except httpx.HTTPError:
         return Dhis2ConnectionStatus(
@@ -131,7 +187,8 @@ def check_dhis2_connection() -> Dhis2ConnectionStatus:
             signed_in=False,
             base_url=base_url,
             last_checked_at=checked_at,
-            message="Could not connect to DHIS2. Check credentials or network.",
+            message="DHIS2 is reachable but the saved credentials no longer work. Sign in again from Settings.",
+            reachability=reachability,
         )
 
 

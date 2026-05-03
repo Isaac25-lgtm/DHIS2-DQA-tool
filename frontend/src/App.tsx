@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { AuthProvider } from "./hooks/useAuth";
+import { Dhis2StatusProvider } from "./hooks/useDhis2Status";
 import { ThemeProvider } from "./hooks/useTheme";
 import { AppRoutes } from "./routes/AppRoutes";
 import { initOfflineStore } from "./services/offlineStore";
@@ -12,7 +13,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppRoutes />
+        <Dhis2StatusProvider>
+          <AppRoutes />
+        </Dhis2StatusProvider>
       </AuthProvider>
     </ThemeProvider>
   );

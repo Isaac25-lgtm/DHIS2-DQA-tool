@@ -793,12 +793,15 @@ export interface AssessmentTeamAssignmentPayload {
   team_members: AssessmentTeamMemberPayload[];
 }
 
+export type Dhis2Reachability = "reachable" | "unreachable" | "not_configured";
+
 export interface Dhis2ConnectionStatus {
   connected: boolean;
   base_url: string;
   last_checked_at: string;
   message: string;
   signed_in: boolean;
+  reachability?: Dhis2Reachability;
 }
 
 export interface Dhis2LoginPayload {

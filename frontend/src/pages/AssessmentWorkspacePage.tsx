@@ -315,12 +315,17 @@ export function AssessmentWorkspacePage() {
   });
 
   const readOnly = workspace?.workspace_mode === "READ_ONLY";
+  // DHIS2 sync is allowed at every phase the round is still open, so that whoever
+  // is in front of the workspace can fill in the DHIS2 column whenever the network
+  // returns — during initial assessment, after the assessor sends to manager, or
+  // during the manager's review. Only CLOSED and ARCHIVED rounds block it.
+  const roundStatus = workspace?.assessment_round.status ?? "";
+  const roundIsLockedDown = ["CLOSED", "ARCHIVED"].includes(roundStatus);
   const canSyncWithDhis2 =
     Boolean(workspace) &&
     isOnline &&
-    ((user?.role === "ASSESSOR" && workspace?.workspace_mode === "EDIT") ||
-      (user?.role === "MANAGER" &&
-        !["CLOSED", "ARCHIVED"].includes(workspace?.assessment_round.status ?? "")));
+    !roundIsLockedDown &&
+    (user?.role === "MANAGER" || user?.role === "ASSESSOR" || user?.role === "REVIEWER");
   const currentTeamMember = workspace?.assessment_facility.team_members.find((member) => member.user_id === user?.id && member.is_active);
   const canSubmit = Boolean(
     workspace?.workspace_mode === "EDIT" &&
