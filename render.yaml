@@ -32,13 +32,11 @@ services:
         value: "60"
       - key: DHIS2_BASE_URL
         value: "https://hmis.health.go.ug/api"
-      # Optional: pre-seed a backend DHIS2 session at startup so live DHIS2 search/import works
-      # without a manager re-signing in after every backend restart. Leave blank if you want
-      # managers to sign in via Settings instead.
-      - key: DHIS2_USERNAME
-        sync: false
-      - key: DHIS2_PASSWORD
-        sync: false
+      # DHIS2 sign-in is performed by managers from the in-app Settings page; the password is held
+      # only in backend process memory. DHIS2_USERNAME / DHIS2_PASSWORD env vars are intentionally
+      # NOT defined here. If you ever want backend-side auto-login that survives restarts, add them
+      # manually via the Render dashboard.
+
       # AI report drafting (DeepSeek or compatible). Leave AI_API_KEY blank to use deterministic
       # template fallback reports. AI_PROVIDER e.g. "deepseek". AI_MODEL e.g. "deepseek-v4-pro".
       - key: AI_API_KEY
