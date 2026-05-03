@@ -32,6 +32,15 @@ services:
         value: "60"
       - key: DHIS2_BASE_URL
         value: "https://hmis.health.go.ug/api"
+      # Optional: pre-seed a backend DHIS2 session at startup so live DHIS2 search/import works
+      # without a manager re-signing in after every backend restart. Leave blank if you want
+      # managers to sign in via Settings instead.
+      - key: DHIS2_USERNAME
+        sync: false
+      - key: DHIS2_PASSWORD
+        sync: false
+      # AI report drafting (DeepSeek or compatible). Leave AI_API_KEY blank to use deterministic
+      # template fallback reports. AI_PROVIDER e.g. "deepseek". AI_MODEL e.g. "deepseek-v4-pro".
       - key: AI_API_KEY
         sync: false
       - key: AI_PROVIDER
@@ -41,8 +50,18 @@ services:
       # JSON array of allowed origins, e.g. ["https://ucmb-dqa-frontend.onrender.com"]
       - key: CORS_ORIGINS
         sync: false
+      # First-manager seed. Set SEED_DEFAULT_MANAGER to "true" on the first deploy so the
+      # backend lifespan creates this manager if the email is not yet present in the DB.
+      # Change the password immediately after first sign-in. After that you can set
+      # SEED_DEFAULT_MANAGER back to "false" and redeploy.
       - key: SEED_DEFAULT_MANAGER
-        value: "false"
+        sync: false
+      - key: DEFAULT_MANAGER_NAME
+        sync: false
+      - key: DEFAULT_MANAGER_EMAIL
+        sync: false
+      - key: DEFAULT_MANAGER_PASSWORD
+        sync: false
 
   - type: web
     name: ucmb-dqa-frontend
