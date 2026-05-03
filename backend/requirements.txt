@@ -13,5 +13,6 @@ httpx
 openpyxl
 python-docx
 reportlab
+matplotlib
 pytest
 pytest-asyncio
