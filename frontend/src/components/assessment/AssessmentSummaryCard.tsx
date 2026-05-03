@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarClock, CheckCircle2, MapPinned, Rows3, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, CalendarClock, MapPinned, Rows3, ShieldCheck, Users } from "lucide-react";
 import { Badge } from "../ui/Badge";
 import type { AssessmentWorkspace } from "../../types";
 
@@ -28,24 +28,22 @@ export function AssessmentSummaryCard({
 
   return (
     <section className="overflow-hidden rounded-[28px] border border-brand-border bg-white shadow-panel">
-      <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top_right,rgba(26,173,136,.35),transparent_34%),linear-gradient(135deg,#152638,#0f1e2e_58%,#0a7a5e)] px-6 py-6 text-white">
-        <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+      <div className="relative overflow-hidden bg-[radial-gradient(circle_at_top_right,rgba(26,173,136,.35),transparent_34%),linear-gradient(135deg,#152638,#0f1e2e_58%,#0a7a5e)] px-6 py-4 text-white">
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
             <p className="text-[10px] uppercase tracking-[0.32em] text-emerald-100">Data quality assessment</p>
-            <h1 className="mt-2 font-display text-5xl font-semibold leading-none">DQA</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">
-              Field workspace for register recounts, HMIS 105 report values, and read-only DHIS2 system values.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <h1 className="mt-1 font-display text-2xl font-semibold leading-tight sm:text-3xl">
+              {workspace.facility.facility_name}
+            </h1>
+            <div className="mt-3 flex flex-wrap gap-2">
               <Badge tone="success" className="border-white/15 bg-white/10 text-white">{workspace.assessment_round.assessment_code}</Badge>
-              <Badge tone="info" className="border-white/15 bg-white/10 text-white">{workspace.facility.facility_name}</Badge>
               <Badge tone="neutral" className="border-white/15 bg-white/10 text-white">{workspace.assessment_round.reporting_period}</Badge>
               <Badge tone={workspace.workspace_mode === "EDIT" ? "success" : "warning"}>
                 {workspace.workspace_mode === "EDIT" ? "Edit mode" : "Read-only mode"}
               </Badge>
             </div>
           </div>
-          <div className="relative flex h-32 w-32 items-center justify-center">
+          <div className="relative flex h-24 w-24 items-center justify-center">
             <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 56 56">
               <circle cx="28" cy="28" r="24" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="5" />
               <circle
@@ -62,21 +60,20 @@ export function AssessmentSummaryCard({
               />
             </svg>
             <div className="text-center">
-              <p className="font-mono-ui text-2xl font-semibold">{completionPercent}%</p>
-              <p className="text-[11px] text-white/65">{completedRows}/{totalRows} indicators</p>
+              <p className="font-mono-ui text-xl font-semibold">{completionPercent}%</p>
+              <p className="text-[10px] text-white/65">{completedRows}/{totalRows}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-[18px] bg-brand-surface px-4 py-4">
           <div className="flex items-center gap-2 text-brand-muted">
             <MapPinned size={16} />
-            Facility
+            District
           </div>
-          <p className="mt-2 font-semibold text-brand-text">{workspace.facility.facility_name}</p>
-          <p className="mt-1 text-sm text-brand-muted">{workspace.facility.district}</p>
+          <p className="mt-2 font-semibold text-brand-text">{workspace.facility.district}</p>
         </div>
 
         <div className="rounded-[18px] bg-brand-surface px-4 py-4">
@@ -85,10 +82,7 @@ export function AssessmentSummaryCard({
             Shared group account
           </div>
           <p className="mt-2 font-semibold text-brand-text">{sharedGroupLogin}</p>
-          <p className="mt-1 text-sm text-brand-muted">
-            {sharedGroupEmail}
-          </p>
-          <p className="mt-1 text-sm text-brand-muted">All group members use this same login for the assigned facilities.</p>
+          <p className="mt-1 text-sm text-brand-muted">{sharedGroupEmail}</p>
         </div>
 
         <div className="rounded-[18px] bg-brand-surface px-4 py-4">
@@ -122,17 +116,6 @@ export function AssessmentSummaryCard({
           </div>
           <p className="mt-2 font-semibold text-brand-text">
             {hasDhis2Error ? "Needs attention" : hasDhis2Success ? "Values loaded" : "Not pulled"}
-          </p>
-          <p className="mt-1 text-sm text-brand-muted">Status is based on field-time DHIS2 extraction metadata.</p>
-        </div>
-
-        <div className="rounded-[18px] border border-emerald-100 bg-emerald-50 px-4 py-4 xl:col-span-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
-            <CheckCircle2 size={16} />
-            DHIS2 values are handled server-side
-          </div>
-          <p className="mt-1 text-sm text-emerald-700">
-            The green DHIS2 column is read-only for the assessment team and is never typed manually.
           </p>
         </div>
       </div>

@@ -378,6 +378,8 @@ def build_submissions_workbook(
     summary.append(["Metric", "Value"])
     for key, value in stats.model_dump().items():
         summary.append([key.replace("_", " ").title(), value])
+        if key.endswith("_percent"):
+            summary.cell(row=summary.max_row, column=2).number_format = '0.0"%"'
     _finish_sheet(summary)
 
     submissions = workbook.create_sheet("Submissions")
@@ -416,6 +418,10 @@ def build_submissions_workbook(
             ", ".join(item.team_members),
             item.general_assessment_comment or "",
         ])
+    for row in submissions.iter_rows(min_row=2):
+        score_cell = row[7]
+        if isinstance(score_cell.value, (int, float)):
+            score_cell.number_format = '0.0"%"'
     _finish_sheet(submissions)
 
     data = workbook.create_sheet("Submitted Data")
@@ -474,12 +480,17 @@ def build_submissions_workbook(
     flag_col = 16
     severity_col = 17
     percent_cols = ["L", "M", "N", "O"]
+    percent_col_indices = [ord(letter) - ord("A") for letter in percent_cols]
     for row in data.iter_rows(min_row=2):
         for col_idx in (flag_col, severity_col):
             fill = _flag_fill(str(row[col_idx - 1].value or ""))
             if fill:
                 row[col_idx - 1].fill = fill
                 row[col_idx - 1].font = Font(bold=True)
+        for pct_idx in percent_col_indices:
+            cell = row[pct_idx]
+            if cell.value is not None:
+                cell.number_format = '0.0"%"'
     if data.max_row >= 2:
         for col in percent_cols:
             data.conditional_formatting.add(

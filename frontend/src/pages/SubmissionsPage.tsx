@@ -6,6 +6,7 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Table } from "../components/ui/Table";
+import { ScoreBreakdownModal } from "../components/submissions/ScoreBreakdownModal";
 import { assessmentRoundService } from "../services/assessmentRoundService";
 import { comparisonService } from "../services/comparisonService";
 import { exportService } from "../services/exportService";
@@ -70,6 +71,7 @@ export function SubmissionsPage() {
   const [selectedFacilityId, setSelectedFacilityId] = useState("");
   const [dashboard, setDashboard] = useState<SubmissionDashboard | null>(null);
   const [detail, setDetail] = useState<SubmissionDetail | null>(null);
+  const [breakdown, setBreakdown] = useState<SubmissionDetail | null>(null);
   const [cumulativeDetails, setCumulativeDetails] = useState<SubmissionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -149,9 +151,17 @@ export function SubmissionsPage() {
         accessorKey: "dqa_score",
         header: "Score",
         cell: ({ row }) => (
-          <div className="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-brand-teal bg-emerald-50">
-            <p className="font-mono-ui text-xs font-semibold text-brand-navy">{row.original.dqa_score.toFixed(0)}%</p>
-          </div>
+          <button
+            type="button"
+            title="Click to see how this score was calculated"
+            className="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-brand-teal bg-emerald-50 transition hover:bg-emerald-100 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-brand-teal focus:ring-offset-2"
+            onClick={async () => {
+              const fresh = await submissionService.getSubmission(row.original.assessment_facility_id);
+              setBreakdown(fresh);
+            }}
+          >
+            <span className="font-mono-ui text-xs font-semibold text-brand-navy">{row.original.dqa_score.toFixed(0)}%</span>
+          </button>
         ),
       },
       {
@@ -531,6 +541,10 @@ export function SubmissionsPage() {
         </div>
       </Card>
 
+      {breakdown ? (
+        <ScoreBreakdownModal detail={breakdown} onClose={() => setBreakdown(null)} />
+      ) : null}
+
       {detail ? (
         <div className="fixed inset-0 z-40 bg-brand-navy/55 backdrop-blur-sm" onClick={() => setDetail(null)}>
           <aside
@@ -559,10 +573,16 @@ export function SubmissionsPage() {
             </div>
             <div className="space-y-5 p-6">
               <section className="grid gap-3 md:grid-cols-4">
-                <div className="metric-card metric-top-teal">
-                  <p className="text-sm text-brand-muted">DQA score</p>
-                  <p className="mt-2 text-3xl font-black text-brand-teal">{detail.summary.dqa_score.toFixed(1)}%</p>
-                </div>
+                <button
+                  type="button"
+                  className="metric-card metric-top-teal text-left transition hover:shadow-panel focus:outline-none focus:ring-2 focus:ring-brand-teal focus:ring-offset-2"
+                  onClick={() => setBreakdown(detail)}
+                  title="Click to see how this score was calculated"
+                >
+                  <span className="block text-sm text-brand-muted">DQA score</span>
+                  <span className="mt-2 block text-3xl font-black text-brand-teal">{detail.summary.dqa_score.toFixed(1)}%</span>
+                  <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-teal">Click to explain</span>
+                </button>
                 <div className="metric-card metric-top-red">
                   <p className="text-sm text-brand-muted">Flagged rows</p>
                   <p className="mt-2 text-3xl font-black text-brand-danger">{detail.summary.flagged_rows}</p>

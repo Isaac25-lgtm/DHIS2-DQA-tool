@@ -13,3 +13,16 @@ frontend/node_modules/
 frontend/dist/
 .env
 
+# Local run logs
+*.log
+backend-local.*.log
+frontend-local.*.log
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local artifacts that should not be versioned
+Screenshot*.png

@@ -1,12 +1,15 @@
 import { Badge } from "../ui/Badge";
 import type { SelectedIndicator } from "../../types";
 
+export const DQA_GREEN_MAX_PERCENT = 5;
+export const DQA_AMBER_MAX_PERCENT = 20;
+
 export interface DifferenceSummary {
   registerHmisPercentDiff: number | null;
   hmisDhis2PercentDiff: number | null;
   registerDhis2PercentDiff: number | null;
   maxPercentDiff: number | null;
-  label: "Match" | "Within 5%" | "Flagged >5%" | "Incomplete" | "Critical" | "High variance";
+  label: "Match" | "Within tolerance" | "Moderate variance" | "Above tolerance" | "Incomplete" | "Critical" | "High variance";
   tone: "success" | "warning" | "danger" | "neutral";
 }
 
@@ -110,10 +113,13 @@ export function calculateDifferenceSummary(
   if (maxPercentDiff === 0) {
     return { registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff, maxPercentDiff, label: "Match", tone: "success" };
   }
-  if (maxPercentDiff <= 5) {
-    return { registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff, maxPercentDiff, label: "Within 5%", tone: "warning" };
+  if (maxPercentDiff <= DQA_GREEN_MAX_PERCENT) {
+    return { registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff, maxPercentDiff, label: "Within tolerance", tone: "success" };
   }
-  return { registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff, maxPercentDiff, label: "Flagged >5%", tone: "danger" };
+  if (maxPercentDiff <= DQA_AMBER_MAX_PERCENT) {
+    return { registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff, maxPercentDiff, label: "Moderate variance", tone: "warning" };
+  }
+  return { registerHmisPercentDiff, hmisDhis2PercentDiff, registerDhis2PercentDiff, maxPercentDiff, label: "Above tolerance", tone: "danger" };
 }
 
 export function formatPercentDiff(value: number | null) {

@@ -85,20 +85,89 @@ function mergeDraftIntoValues(serverValues: DqaValue[], draft: AssessmentDraft |
   });
 }
 
-function getBannerVariant(result: SyncDraftResult | null, message: string | null) {
-  if (result?.status === "RELOGIN_REQUIRED") {
-    return "relogin" as const;
+type PrimaryBannerVariant =
+  | "offline"
+  | "syncing"
+  | "synced"
+  | "failed"
+  | "pending"
+  | "relogin"
+  | "info";
+
+function getPrimaryBanner(args: {
+  isOnline: boolean;
+  wasOffline: boolean;
+  readOnly: boolean;
+  hasConflict: boolean;
+  draftState: { sync_status?: string | null; error_message?: string | null } | null;
+  syncingWithDhis2: boolean;
+  syncResult: SyncDraftResult | null;
+  message: string | null;
+  statusMessage: string | null;
+  workspaceDhis2PullMessage: string | null;
+  localSaveError: boolean;
+}): { variant: PrimaryBannerVariant; message: string } | null {
+  if (args.localSaveError) {
+    return { variant: "failed", message: "Unable to save draft locally on this device." };
   }
-  if (result?.status === "FAILED") {
-    return "failed" as const;
+  if (args.draftState?.sync_status === "RELOGIN_REQUIRED" || args.syncResult?.status === "RELOGIN_REQUIRED") {
+    return {
+      variant: "relogin",
+      message: args.syncResult?.message ?? "Please log in again to sync your saved draft.",
+    };
   }
-  if (result?.status === "SYNCED") {
-    return "synced" as const;
+  if (args.draftState?.sync_status === "SYNC_FAILED") {
+    return {
+      variant: "failed",
+      message:
+        args.draftState.error_message ??
+        "Sync failed. Your draft is still saved locally. Try again when the network improves.",
+    };
   }
-  if (message?.includes("offline")) {
-    return "offline" as const;
+  if (args.syncResult?.status === "FAILED") {
+    return { variant: "failed", message: args.syncResult.message };
   }
-  return "info" as const;
+  if (args.hasConflict) {
+    return {
+      variant: "pending",
+      message:
+        "This assessment has server updates and local unsynced changes. Local draft fields remain on screen until you sync or reload.",
+    };
+  }
+  if (!args.isOnline) {
+    return { variant: "offline", message: "You are offline. Your work is being saved on this device." };
+  }
+  if (args.syncingWithDhis2) {
+    return { variant: "syncing", message: "Syncing with DHIS2..." };
+  }
+  if (
+    args.draftState?.sync_status === "PENDING_SYNC" ||
+    args.draftState?.sync_status === "DRAFT_SAVED_LOCALLY"
+  ) {
+    return { variant: "pending", message: "Your draft is saved locally and pending sync." };
+  }
+  if (args.readOnly) {
+    return {
+      variant: "info",
+      message: "This workspace is read-only. Submitted, closed, and review views cannot be edited.",
+    };
+  }
+  if (args.workspaceDhis2PullMessage) {
+    return {
+      variant: "pending",
+      message: "DHIS2 values are not available yet. You can continue entering register and HMIS 105 values.",
+    };
+  }
+  if (args.syncResult?.status === "SYNCED") {
+    return { variant: "synced", message: args.syncResult.message };
+  }
+  if (args.wasOffline) {
+    return { variant: "synced", message: "You are back online." };
+  }
+  if (args.message || args.statusMessage) {
+    return { variant: "info", message: args.message ?? args.statusMessage ?? "" };
+  }
+  return null;
 }
 
 export function AssessmentWorkspacePage() {
@@ -363,48 +432,26 @@ export function AssessmentWorkspacePage() {
     );
   }
 
+  const primaryBanner = getPrimaryBanner({
+    isOnline,
+    wasOffline,
+    readOnly: Boolean(readOnly),
+    hasConflict,
+    draftState,
+    syncingWithDhis2,
+    syncResult,
+    message,
+    statusMessage,
+    workspaceDhis2PullMessage: workspace.dhis2_pull_message ?? null,
+    localSaveError: autoSaveStatus === "ERROR_SAVING_LOCALLY",
+  });
+
   return (
     <div className="space-y-6">
       <AssessmentSummaryCard workspace={workspace} missingRequiredCount={missingRequiredCount} />
 
-      {!isOnline ? (
-        <SyncBanner
-          variant="offline"
-          message="You are offline. Your work is being saved on this device."
-        />
-      ) : wasOffline ? (
-        <SyncBanner variant="synced" message="You are back online." />
-      ) : null}
-      {readOnly ? (
-        <SyncBanner
-          variant="info"
-          message="This workspace is in read-only mode. Submitted, closed, and review views cannot be edited."
-        />
-      ) : null}
-      {hasConflict ? (
-        <SyncBanner
-          variant="pending"
-          message="This assessment has server updates and local unsynced changes. Local draft fields remain on screen until you sync or reload."
-        />
-      ) : null}
-      {draftState?.sync_status === "RELOGIN_REQUIRED" ? (
-        <SyncBanner variant="relogin" message="Please log in again to sync your saved draft." />
-      ) : null}
-      {draftState?.sync_status === "SYNC_FAILED" ? (
-        <SyncBanner
-          variant="failed"
-          message={draftState.error_message ?? "Sync failed. Your draft is still saved locally. Try again when the network improves."}
-        />
-      ) : null}
-      {draftState?.sync_status === "PENDING_SYNC" || draftState?.sync_status === "DRAFT_SAVED_LOCALLY" ? (
-        <SyncBanner variant="pending" message="Your draft is saved locally and pending sync." />
-      ) : null}
-      {syncingWithDhis2 ? <SyncBanner variant="syncing" message="Syncing with DHIS2..." /> : null}
-      {syncResult || message || statusMessage ? (
-        <SyncBanner
-          variant={getBannerVariant(syncResult, message ?? statusMessage ?? null)}
-          message={syncResult?.message ?? message ?? statusMessage ?? ""}
-        />
+      {primaryBanner ? (
+        <SyncBanner variant={primaryBanner.variant} message={primaryBanner.message} />
       ) : null}
 
       <section className="sticky bottom-4 z-10 rounded-[22px] border border-brand-border bg-white/95 px-5 py-4 shadow-panel backdrop-blur">
@@ -423,9 +470,10 @@ export function AssessmentWorkspacePage() {
             className="gap-2"
             onClick={() => void handleSyncWithDhis2()}
             disabled={!canSyncWithDhis2 || syncingWithDhis2}
+            title={!isOnline ? "Offline – your work is saved locally and will sync when network returns" : undefined}
           >
-            <RefreshCcw size={16} />
-            {!isOnline ? "Offline - saved locally" : syncingWithDhis2 ? "Syncing..." : "Sync with DHIS2"}
+            <RefreshCcw size={16} className={syncingWithDhis2 ? "animate-spin" : undefined} />
+            {syncingWithDhis2 ? "Syncing..." : "Sync with DHIS2"}
           </Button>
           {canSubmit ? (
             <Button className="ml-auto gap-2" onClick={() => void handleSubmitAssessment()} disabled={submitting}>
@@ -433,17 +481,12 @@ export function AssessmentWorkspacePage() {
               {submitting ? "Sending..." : isOnline ? "Send to Manager" : "Mark to send"}
             </Button>
           ) : workspace.workspace_mode === "EDIT" ? (
-            <Button className="ml-auto" disabled>Only the assigned shared group login can send this assessment</Button>
+            <p className="ml-auto max-w-xs text-right text-xs text-brand-muted">
+              Only the assigned shared group login can send this assessment.
+            </p>
           ) : null}
         </div>
       </section>
-
-      {workspace.dhis2_pull_message ? (
-        <SyncBanner
-          variant="pending"
-          message="DHIS2 values are not available yet. You can continue entering register and HMIS 105 values."
-        />
-      ) : null}
 
       <Card
         title="Assessment values"
@@ -466,10 +509,6 @@ export function AssessmentWorkspacePage() {
           placeholder="Example: Maternity register incomplete; HMIS 105 report verified with records officer."
         />
       </Card>
-
-      {autoSaveStatus === "ERROR_SAVING_LOCALLY" ? (
-        <SyncBanner variant="failed" message="Unable to save draft locally on this device." />
-      ) : null}
     </div>
   );
 }

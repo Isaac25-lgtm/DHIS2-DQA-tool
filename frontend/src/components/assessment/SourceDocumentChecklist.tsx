@@ -53,27 +53,32 @@ export function SourceDocumentChecklist({
               </span>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {[
-                ["available", "Available"],
-                ["complete", "Complete"],
-                ["legible", "Legible"],
-                ["missing_pages", "Missing pages"],
-              ].map(([field, label]) => (
-                <label key={field} className="flex items-center gap-2 rounded-lg bg-brand-surface px-3 py-2 text-sm text-brand-text">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(current[field as keyof SourceDocumentCheckInput])}
-                    onChange={(event) =>
-                      updateCheck(requirement.name, {
-                        [field]: event.target.checked,
-                      } as Partial<SourceDocumentCheckInput>)
-                    }
-                    disabled={disabled}
-                    className="h-4 w-4"
-                  />
-                  {label}
-                </label>
-              ))}
+              {([
+                { field: "available", label: "Available", invert: false },
+                { field: "complete", label: "Complete", invert: false },
+                { field: "legible", label: "Legible", invert: false },
+                { field: "missing_pages", label: "All pages present", invert: true },
+              ] as const).map(({ field, label, invert }) => {
+                const rawValue = Boolean(current[field as keyof SourceDocumentCheckInput]);
+                const displayChecked = invert ? !rawValue : rawValue;
+                return (
+                  <label key={field} className="flex items-center gap-2 rounded-lg bg-brand-surface px-3 py-2 text-sm text-brand-text">
+                    <input
+                      type="checkbox"
+                      checked={displayChecked}
+                      onChange={(event) => {
+                        const nextValue = invert ? !event.target.checked : event.target.checked;
+                        updateCheck(requirement.name, {
+                          [field]: nextValue,
+                        } as Partial<SourceDocumentCheckInput>);
+                      }}
+                      disabled={disabled}
+                      className="h-4 w-4"
+                    />
+                    {label}
+                  </label>
+                );
+              })}
             </div>
             <div className="mt-4">
               <Textarea

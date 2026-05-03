@@ -2,47 +2,55 @@ import { useMemo } from "react";
 import { Badge } from "../ui/Badge";
 import { Input } from "../ui/Input";
 import type { DqaValue, SelectedIndicator } from "../../types";
-import { calculateDifferenceSummary, DifferenceFlagBadge, formatPercentDiff } from "./DifferenceFlagBadge";
+import {
+  calculateDifferenceSummary,
+  DifferenceFlagBadge,
+  DQA_AMBER_MAX_PERCENT,
+  DQA_GREEN_MAX_PERCENT,
+  formatPercentDiff,
+} from "./DifferenceFlagBadge";
 
 function toDisplayNumber(value: number | null) {
   return value ?? "";
 }
 
-function DifferenceCell({ value }: { value: number | null }) {
-  const cappedWidth = value === null ? 0 : Math.min(Math.abs(value) * 8, 100);
-  const toneClass =
-    value === null
-      ? "text-brand-muted"
-      : value === 0
-        ? "text-brand-success"
-        : value <= 5
-          ? "text-brand-warning"
-          : "text-brand-danger";
-  const barClass =
-    value === null
-      ? "bg-brand-border"
-      : value === 0
-        ? "bg-brand-success"
-        : value <= 5
-          ? "bg-brand-warning"
-          : "bg-brand-danger";
+type DiffTone = "muted" | "success" | "warning" | "danger";
 
+function getDiffTone(value: number | null): DiffTone {
+  if (value === null) return "muted";
+  if (value <= DQA_GREEN_MAX_PERCENT) return "success";
+  if (value <= DQA_AMBER_MAX_PERCENT) return "warning";
+  return "danger";
+}
+
+const DIFF_CELL_BG: Record<DiffTone, string> = {
+  muted: "bg-brand-surface/40",
+  success: "bg-emerald-50",
+  warning: "bg-amber-50",
+  danger: "bg-red-50",
+};
+
+const DIFF_TEXT_COLOR: Record<DiffTone, string> = {
+  muted: "text-brand-muted",
+  success: "text-emerald-800",
+  warning: "text-amber-800",
+  danger: "text-red-800",
+};
+
+function DifferenceCell({ value }: { value: number | null }) {
+  const tone = getDiffTone(value);
   return (
-    <div className="min-w-28">
-      <span className={`font-mono-ui text-sm font-semibold ${toneClass}`}>{formatPercentDiff(value)}</span>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-brand-surface">
-        <div className={`h-full rounded-full ${barClass}`} style={{ width: `${cappedWidth}%` }} />
-      </div>
-    </div>
+    <span className={`block text-center font-mono-ui text-base font-semibold ${DIFF_TEXT_COLOR[tone]}`}>
+      {formatPercentDiff(value)}
+    </span>
   );
 }
 
-function MetadataChip({ label, value }: { label: string; value: string | null | undefined }) {
+function MetadataLine({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
-    <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-border bg-brand-surface px-2.5 py-1 text-[11px] font-semibold text-brand-muted">
-      <span className="text-brand-navy">{label}:</span>
-      <span className="truncate">{value}</span>
+    <span className="text-[11px] text-brand-muted">
+      <span className="font-medium text-brand-text/70">{label}:</span> {value}
     </span>
   );
 }
@@ -50,56 +58,88 @@ function MetadataChip({ label, value }: { label: string; value: string | null | 
 function IndicatorSummary({ indicator, compact = false }: { indicator: SelectedIndicator; compact?: boolean }) {
   return (
     <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="info" className="font-mono-ui">{indicator.hmis_code}</Badge>
-        {indicator.is_required ? <Badge tone="success">Required</Badge> : null}
-      </div>
-      <p className={`mt-2 font-semibold leading-snug text-brand-text ${compact ? "text-sm" : "text-[15px]"}`}>
+      <p className={`font-semibold leading-snug text-brand-text ${compact ? "text-sm" : "text-[15px]"}`}>
         {indicator.indicator_name}
       </p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        <MetadataChip label="Register" value={indicator.source_register ?? "Not set"} />
-        <MetadataChip label="Group" value={indicator.indicator_group} />
-        <MetadataChip label="Combo" value={indicator.category_combo} />
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Badge tone="info" className="font-mono-ui">{indicator.hmis_code}</Badge>
+        {indicator.is_required ? <Badge tone="success">Required</Badge> : null}
+        <MetadataLine label="Register" value={indicator.source_register ?? "Not set"} />
+        <MetadataLine label="Group" value={indicator.indicator_group} />
+        <MetadataLine label="Combo" value={indicator.category_combo} />
       </div>
     </div>
   );
 }
 
-function ValueEntryField({
+type ValueTone = "register" | "hmis" | "dhis2";
+
+const TONE_PALETTE: Record<ValueTone, { label: string; border: string; bg: string; text: string; placeholder: string; focus: string }> = {
+  register: {
+    label: "text-emerald-900",
+    border: "border-emerald-500",
+    bg: "bg-emerald-50",
+    text: "text-emerald-950",
+    placeholder: "placeholder:text-emerald-900/60",
+    focus: "focus:border-emerald-700 focus:ring-emerald-200",
+  },
+  hmis: {
+    label: "text-sky-900",
+    border: "border-sky-500",
+    bg: "bg-sky-50",
+    text: "text-sky-950",
+    placeholder: "placeholder:text-sky-900/60",
+    focus: "focus:border-sky-700 focus:ring-sky-200",
+  },
+  dhis2: {
+    label: "text-emerald-900",
+    border: "border-emerald-500",
+    bg: "bg-emerald-50",
+    text: "text-emerald-900",
+    placeholder: "",
+    focus: "",
+  },
+};
+
+function ValueCard({
   label,
   value,
   onChange,
   disabled,
   tone,
+  readOnly = false,
 }: {
   label: string;
   value: number | null;
-  onChange: (value: number | null) => void;
-  disabled: boolean;
-  tone: "register" | "hmis";
+  onChange?: (value: number | null) => void;
+  disabled?: boolean;
+  tone: ValueTone;
+  readOnly?: boolean;
 }) {
-  const isHmis = tone === "hmis";
-  const labelClass = isHmis ? "text-sky-900" : "text-emerald-900";
-  const inputClass = isHmis
-    ? "min-h-[58px] border-2 border-sky-500 bg-sky-50 px-4 text-center font-mono-ui text-2xl font-black text-sky-950 shadow-[inset_0_0_0_1px_rgba(14,165,233,.2)] placeholder:text-sky-900/35 focus:border-sky-700 focus:ring-sky-200"
-    : "min-h-[58px] border-2 border-emerald-500 bg-emerald-50 px-4 text-center font-mono-ui text-2xl font-black text-emerald-950 shadow-[inset_0_0_0_1px_rgba(16,185,129,.2)] placeholder:text-emerald-900/35 focus:border-emerald-700 focus:ring-emerald-200";
+  const palette = TONE_PALETTE[tone];
+  const boxBase = `h-[44px] w-full rounded-[10px] border-2 ${palette.border} ${palette.bg} px-3 font-mono-ui text-lg font-bold ${palette.text}`;
 
   return (
-    <label className="block rounded-[18px] border border-brand-border bg-white p-2 shadow-sm">
-      <span className={`mb-1 block text-center text-[11px] font-black uppercase tracking-[0.12em] ${labelClass}`}>
+    <label className="block rounded-[14px] border border-brand-border bg-white p-2 shadow-sm">
+      <span className={`mb-1 block text-center text-[10px] font-bold uppercase tracking-[0.14em] ${palette.label}`}>
         {label}
       </span>
-      <Input
-        type="number"
-        inputMode="numeric"
-        min={0}
-        placeholder="0"
-        value={toDisplayNumber(value)}
-        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
-        disabled={disabled}
-        className={inputClass}
-      />
+      {readOnly ? (
+        <div className={`${boxBase} flex items-center justify-end`} aria-readonly="true">
+          {value ?? "—"}
+        </div>
+      ) : (
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          placeholder="0"
+          value={toDisplayNumber(value)}
+          onChange={(event) => onChange?.(event.target.value === "" ? null : Number(event.target.value))}
+          disabled={disabled}
+          className={`${boxBase} py-0 text-right leading-[40px] ${palette.placeholder} ${palette.focus}`}
+        />
+      )}
     </label>
   );
 }
@@ -173,7 +213,17 @@ export function AssessmentValueTable({
   return (
     <div className="space-y-4">
       <div className="hidden overflow-x-auto rounded-[22px] border border-brand-border bg-white shadow-soft xl:block">
-        <table className="min-w-[980px] divide-y divide-brand-border/70">
+        <table className="w-full min-w-[1180px] table-fixed divide-y divide-brand-border/70">
+          <colgroup>
+            <col />
+            <col className="w-[160px]" />
+            <col className="w-[160px]" />
+            <col className="w-[160px]" />
+            <col className="w-[140px]" />
+            <col className="w-[140px]" />
+            <col className="w-[140px]" />
+            <col className="w-[110px]" />
+          </colgroup>
           <thead>
             <tr className="bg-brand-blue">
               <th rowSpan={2} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
@@ -195,19 +245,19 @@ export function AssessmentValueTable({
                 Flag
               </th>
             </tr>
-            <tr>
-              <th className="bg-amber-50 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+            <tr className="divide-x divide-slate-300">
+              <th className="bg-amber-50 px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
                 HMIS vs Reg
               </th>
-              <th className="bg-blue-50 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">
+              <th className="bg-blue-50 px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700">
                 DHIS2 vs HMIS
               </th>
-              <th className="bg-emerald-50 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+              <th className="bg-emerald-50 px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
                 DHIS2 vs Reg
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-brand-border/70">
+          <tbody className="divide-y divide-slate-300">
             {indicators.map((indicator) => {
               const currentValue = valueMap.get(indicator.indicator_id) ?? fallbackValue(indicator.indicator_id);
               const differenceSummary = calculateDifferenceSummary(
@@ -218,12 +268,12 @@ export function AssessmentValueTable({
               );
 
               return (
-                <tr key={indicator.id} className="transition hover:bg-brand-surface/70">
-                  <td className="w-[34%] max-w-sm px-4 py-4 align-top">
+                <tr key={indicator.id} className="divide-x divide-slate-300 transition hover:bg-brand-surface/70">
+                  <td className="px-4 py-4 align-top">
                     <IndicatorSummary indicator={indicator} />
                   </td>
-                  <td className="w-[150px] px-3 py-4 align-top">
-                    <ValueEntryField
+                  <td className="px-4 py-4 align-top">
+                    <ValueCard
                       label="Register"
                       value={currentValue.register_value}
                       onChange={(nextValue) =>
@@ -235,8 +285,8 @@ export function AssessmentValueTable({
                       tone="register"
                     />
                   </td>
-                  <td className="w-[160px] bg-sky-50/45 px-3 py-4 align-top">
-                    <ValueEntryField
+                  <td className="px-4 py-4 align-top">
+                    <ValueCard
                       label="HMIS 105"
                       value={currentValue.hmis105_value}
                       onChange={(nextValue) =>
@@ -248,25 +298,28 @@ export function AssessmentValueTable({
                       tone="hmis"
                     />
                   </td>
-                  <td className="border-l-2 border-emerald-200 bg-emerald-50/45 px-4 py-4 align-top">
-                    <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-center font-mono-ui text-lg font-bold text-emerald-800">
-                      {currentValue.dhis2_value_at_assessment ?? "-"}
-                    </div>
-                    <p className="mt-1 text-center text-[10px] font-semibold text-emerald-700">{dhis2StatusText(currentValue)}</p>
+                  <td className="border-l-2 border-emerald-200 px-4 py-4 align-top">
+                    <ValueCard
+                      label="DHIS 2"
+                      value={currentValue.dhis2_value_at_assessment}
+                      tone="dhis2"
+                      readOnly
+                    />
+                    <p className="mt-1.5 text-center text-[10px] font-semibold text-emerald-700">{dhis2StatusText(currentValue)}</p>
                     {currentValue.dhis2_error_message ? (
-                      <p className="mt-1 max-w-40 text-center text-[10px] text-brand-danger">{currentValue.dhis2_error_message}</p>
+                      <p className="mt-1 text-center text-[10px] text-brand-danger">{currentValue.dhis2_error_message}</p>
                     ) : null}
                   </td>
-                  <td className="px-4 py-4 align-top">
+                  <td className={`px-4 py-4 align-middle ${DIFF_CELL_BG[getDiffTone(differenceSummary.registerHmisPercentDiff)]}`}>
                     <DifferenceCell value={differenceSummary.registerHmisPercentDiff} />
                   </td>
-                  <td className="px-4 py-4 align-top">
+                  <td className={`px-4 py-4 align-middle ${DIFF_CELL_BG[getDiffTone(differenceSummary.hmisDhis2PercentDiff)]}`}>
                     <DifferenceCell value={differenceSummary.hmisDhis2PercentDiff} />
                   </td>
-                  <td className="px-4 py-4 align-top">
+                  <td className={`px-4 py-4 align-middle ${DIFF_CELL_BG[getDiffTone(differenceSummary.registerDhis2PercentDiff)]}`}>
                     <DifferenceCell value={differenceSummary.registerDhis2PercentDiff} />
                   </td>
-                  <td className="px-4 py-4 align-top">
+                  <td className="px-4 py-4 align-middle">
                     <DifferenceFlagBadge summary={differenceSummary} />
                   </td>
                 </tr>
@@ -293,36 +346,39 @@ export function AssessmentValueTable({
                 <DifferenceFlagBadge summary={differenceSummary} />
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <ValueEntryField
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <ValueCard
                   label="Register"
                   value={currentValue.register_value}
                   onChange={(nextValue) =>
-                      onChange(indicator.indicator_id, {
+                    onChange(indicator.indicator_id, {
                       register_value: nextValue,
-                      })
-                    }
+                    })
+                  }
                   disabled={disabled}
                   tone="register"
                 />
-                <ValueEntryField
+                <ValueCard
                   label="HMIS 105"
                   value={currentValue.hmis105_value}
                   onChange={(nextValue) =>
-                      onChange(indicator.indicator_id, {
+                    onChange(indicator.indicator_id, {
                       hmis105_value: nextValue,
-                      })
-                    }
+                    })
+                  }
                   disabled={disabled}
                   tone="hmis"
                 />
+                <ValueCard
+                  label="DHIS 2"
+                  value={currentValue.dhis2_value_at_assessment}
+                  tone="dhis2"
+                  readOnly
+                />
               </div>
+              <p className="mt-1.5 text-center text-[10px] font-semibold text-emerald-700">{dhis2StatusText(currentValue)}</p>
 
-              <div className="mt-3 grid gap-2 rounded-[14px] bg-brand-surface px-3 py-3 text-xs text-brand-text sm:grid-cols-2">
-                <p className="rounded-[12px] border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <span className="font-semibold text-emerald-800">DHIS2:</span> {currentValue.dhis2_value_at_assessment ?? "-"}
-                  <span className="mt-1 block text-xs text-emerald-700">{dhis2StatusText(currentValue)}</span>
-                </p>
+              <div className="mt-3 grid gap-2 rounded-[14px] bg-brand-surface px-3 py-3 text-xs text-brand-text sm:grid-cols-3">
                 <p><span className="font-semibold text-brand-navy">HMIS vs Register:</span> {formatPercentDiff(differenceSummary.registerHmisPercentDiff)}</p>
                 <p><span className="font-semibold text-brand-navy">DHIS2 vs HMIS 105:</span> {formatPercentDiff(differenceSummary.hmisDhis2PercentDiff)}</p>
                 <p><span className="font-semibold text-brand-navy">DHIS2 vs Register:</span> {formatPercentDiff(differenceSummary.registerDhis2PercentDiff)}</p>
