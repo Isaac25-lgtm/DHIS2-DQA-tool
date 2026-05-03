@@ -22,6 +22,7 @@ from app.models.base import ExportStatus, ExportType, ReportStatus
 from app.models.export_log import ExportLog
 from app.models.report import Report
 from app.models.user import User
+from app.services.comment_sanitizer import sanitize_comment
 
 try:  # pragma: no cover - optional dependency path
     from reportlab.lib.pagesizes import A4
@@ -131,14 +132,58 @@ def _coerce_number(value) -> float | None:
         return None
 
 
-def _format_value(value) -> str:
+def _format_value(value, *, as_percent: bool = False) -> str:
     if value is None:
         return "Not available"
     if isinstance(value, float):
         if value == int(value):
-            return str(int(value))
-        return f"{value:.1f}"
+            text = str(int(value))
+        else:
+            text = f"{value:.1f}"
+        return f"{text}%" if as_percent else text
+    if as_percent and isinstance(value, int):
+        return f"{value}%"
     return str(value)
+
+
+def _label_implies_percent(label: str) -> bool:
+    """Heuristic: a metric label like 'Completion percent' or 'Exact match rate' should
+    render its numeric value with a trailing % sign."""
+    if not label:
+        return False
+    lower = label.lower()
+    return any(keyword in lower for keyword in ("percent", "rate", "%"))
+
+
+def _rating_for(label: str, value: float | None) -> tuple[str, str]:
+    """Return (rating_text, fill_color) for a numeric value given its label.
+
+    Different label types use different scales. Counts (e.g. 'Critical discrepancy count',
+    'Sync errors') are rated by 'lower is better' — 0 is green, anything > 0 is amber/red.
+    Rates (e.g. 'Exact match rate') are rated by 'higher is better'."""
+    if value is None:
+        return ("Not assessed", "95A5A6")
+
+    lower = label.lower()
+    is_count = ("count" in lower or lower.endswith("errors") or lower.startswith("open ")
+                or lower.startswith("overdue ") or "missing" in lower)
+    is_lower_is_better = is_count or "discrepancy rate" in lower or "error" in lower
+
+    if is_lower_is_better:
+        if value <= 0:
+            return ("Excellent", SCORE_GREEN)
+        if value < 5:
+            return ("Acceptable", SCORE_YELLOW)
+        return ("Action needed", SCORE_RED)
+
+    # Higher-is-better metrics (match rate, completion, etc.)
+    if value >= 90:
+        return ("Excellent", SCORE_GREEN)
+    if value >= 70:
+        return ("Good", SCORE_YELLOW)
+    if value >= 50:
+        return ("Needs improvement", SCORE_RED)
+    return ("Poor", SCORE_RED)
 
 
 def _score_color(percent: float | None) -> str:
@@ -735,7 +780,7 @@ def _add_key_value_table(document: Document, title: str, rows: list[tuple[str, o
         cells = table.add_row().cells
         cells[0].text = label
         cells[0].paragraphs[0].runs[0].font.bold = True
-        cells[1].text = _format_value(value)
+        cells[1].text = _format_value(value, as_percent=_label_implies_percent(label))
         if row_idx % 2 == 1:
             _set_cell_shading(cells[0], ROW_ALT_FILL)
             _set_cell_shading(cells[1], ROW_ALT_FILL)
@@ -758,13 +803,12 @@ def _add_score_card_table(document: Document, title: str, rows: list[tuple[str, 
         cells = table.add_row().cells
         cells[0].text = label
         cells[0].paragraphs[0].runs[0].font.bold = True
-        cells[1].text = _format_value(value)
+        cells[1].text = _format_value(value, as_percent=_label_implies_percent(label))
 
-        pct = min(value / max_value * 100, 100) if max_value else 0
-        fill = _score_color(pct)
-        cells[2].text = _format_value(value)
-        _set_cell_shading(cells[2], fill)
-        if fill in (SCORE_GREEN, SCORE_RED):
+        rating_text, rating_fill = _rating_for(label, value)
+        cells[2].text = rating_text
+        _set_cell_shading(cells[2], rating_fill)
+        if rating_fill in (SCORE_GREEN, SCORE_RED):
             for paragraph in cells[2].paragraphs:
                 for run in paragraph.runs:
                     run.font.color.rgb = UCMB_WHITE
@@ -836,50 +880,51 @@ def _add_data_table(document: Document, title: str, headers: list[str], rows: li
 # ====================================================================
 
 def _build_field_notes_section(document: Document, structured: dict, facility_count: int) -> None:
-    """Extract and present additional information / field notes from the assessment data."""
+    """Extract and present additional information / field notes from the assessment data.
+
+    Every comment is run through the sanitizer before being placed in the report:
+    insulting / profane comments are dropped entirely, and ALL-CAPS shouting is
+    converted to readable sentence case. The report must remain audit-ready and safe
+    to share with leadership and external stakeholders.
+    """
     comments = []
-    
+
+    def _add_if_clean(facility: str, type_label: str, raw: str | None) -> None:
+        cleaned = sanitize_comment(raw)
+        if cleaned:
+            comments.append({"facility": facility, "type": type_label, "comment": cleaned})
+
     # General facility comments (assessor's notes on each facility)
-    general_comments = structured.get("general_facility_comments") or []
-    if general_comments:
-        for gc in general_comments:
-            comments.append({
-                "facility": gc.get("facility_name", "Unknown Facility"),
-                "type": "General Assessment Note",
-                "comment": gc.get("comment", ""),
-            })
-    
+    for gc in structured.get("general_facility_comments") or []:
+        _add_if_clean(
+            gc.get("facility_name", "Unknown Facility"),
+            "General Assessment Note",
+            gc.get("comment"),
+        )
+
     # Manager comments on assessment facilities
-    manager_comments = structured.get("manager_comments") or []
-    if manager_comments:
-        for mc in manager_comments:
-            comments.append({
-                "facility": mc.get("facility_name", "Unknown Facility"),
-                "type": "Manager Review Note",
-                "comment": mc.get("comment", ""),
-            })
-    
+    for mc in structured.get("manager_comments") or []:
+        _add_if_clean(
+            mc.get("facility_name", "Unknown Facility"),
+            "Manager Review Note",
+            mc.get("comment"),
+        )
+
     # Assessor comments from comparison rows
-    comparison_rows = structured.get("comparison_rows") or []
-    for row in comparison_rows:
-        assessor_comment = row.get("assessor_comment", "").strip() if row.get("assessor_comment") else ""
-        if assessor_comment:
-            comments.append({
-                "facility": row.get("facility_name", "Unknown Facility"),
-                "type": f"Field Note – {row.get('indicator_name', 'Indicator')}",
-                "comment": assessor_comment,
-            })
-    
+    for row in structured.get("comparison_rows") or []:
+        _add_if_clean(
+            row.get("facility_name", "Unknown Facility"),
+            f"Field Note – {row.get('indicator_name', 'Indicator')}",
+            row.get("assessor_comment"),
+        )
+
     # Source document check comments
-    source_docs = structured.get("source_document_checks") or []
-    for doc in source_docs:
-        doc_comment = doc.get("comment", "").strip() if doc.get("comment") else ""
-        if doc_comment:
-            comments.append({
-                "facility": structured.get("facility", {}).get("facility_name", "Facility"),
-                "type": f"Source Document – {doc.get('source_document_name', 'Unknown')}",
-                "comment": doc_comment,
-            })
+    for doc in structured.get("source_document_checks") or []:
+        _add_if_clean(
+            structured.get("facility", {}).get("facility_name", "Facility"),
+            f"Source Document – {doc.get('source_document_name', 'Unknown')}",
+            doc.get("comment"),
+        )
     
     if not comments:
         # Generate context from structured data even without explicit notes
@@ -1203,6 +1248,342 @@ def _build_recommendations_section(document: Document, structured: dict, facilit
 # Enhanced Statistical Dashboard (with charts)
 # ====================================================================
 
+# ====================================================================
+# NEW: Blended narrative + tables + charts renderer
+# ====================================================================
+
+def _add_section_heading(document: Document, title: str) -> None:
+    h = document.add_heading(title, level=1)
+    for run in h.runs:
+        run.font.color.rgb = UCMB_PRIMARY_BLUE
+
+
+def _add_narrative_paragraphs(document: Document, narrative: str | None) -> None:
+    if not narrative or not narrative.strip():
+        return
+    # Split on blank lines so multi-paragraph narratives render cleanly.
+    paragraphs = [p.strip() for p in narrative.replace("\r\n", "\n").split("\n\n")]
+    paragraphs = [p for p in paragraphs if p]
+    for para_text in paragraphs:
+        # The AI may include a newline inside a paragraph for line wrap; flatten that.
+        flat = " ".join(line.strip() for line in para_text.split("\n") if line.strip())
+        if not flat:
+            continue
+        p = document.add_paragraph(flat)
+        for run in p.runs:
+            run.font.size = Pt(11)
+        _add_paragraph_spacing(p, before_pt=0, after_pt=8)
+
+
+def _render_section_executive_summary(document, structured, sections, facility_count):
+    _add_section_heading(document, "Executive Summary")
+    _add_narrative_paragraphs(document, sections.get("executive_summary"))
+
+
+def _render_section_scope(document, structured, sections, facility_count):
+    _add_section_heading(document, "Assessment Scope and Coverage")
+    _add_narrative_paragraphs(document, sections.get("scope_and_coverage"))
+    coverage = structured.get("coverage") or {}
+    if coverage:
+        _add_key_value_table(
+            document,
+            "Coverage Summary",
+            [
+                ("Facilities selected", coverage.get("total_facilities_selected")),
+                ("Facilities assessed", coverage.get("facilities_assessed")),
+                ("Facilities pending", coverage.get("facilities_pending")),
+                ("Completion percent", coverage.get("percentage_completed")),
+                ("Districts covered", ", ".join(coverage.get("districts_covered") or [])),
+                ("Facility types", ", ".join(coverage.get("facility_types") or [])),
+            ],
+        )
+    chart = _chart_completion_rates(structured)
+    if chart:
+        _add_chart_to_document(document, chart)
+
+
+def _render_section_methods(document, structured, sections, facility_count):
+    _add_section_heading(document, "Methods and Data Sources")
+    _add_narrative_paragraphs(document, sections.get("methods"))
+    summary = structured.get("summary") or {}
+    if summary:
+        _add_score_card_table(
+            document,
+            "Round-Level Quality Indicators",
+            [
+                ("Exact match rate", summary.get("exact_match_rate")),
+                ("Major discrepancy rate", summary.get("major_discrepancy_rate")),
+                ("Source document completeness rate", summary.get("source_document_completeness_rate")),
+                ("Critical discrepancy count", summary.get("critical_discrepancy_count")),
+                ("Open corrective actions", summary.get("open_corrective_actions")),
+                ("Overdue corrective actions", summary.get("overdue_corrective_actions")),
+            ],
+        )
+
+
+def _render_section_overall_findings(document, structured, sections, facility_count):
+    _add_section_heading(document, "Overall Statistical Findings")
+    _add_narrative_paragraphs(document, sections.get("overall_findings"))
+    score = structured.get("dqa_score") or {}
+    if score:
+        _add_score_card_table(
+            document,
+            "DQA Score and Severity Distribution",
+            [
+                ("DQA score percent", score.get("score_percent")),
+                ("Exact matches", score.get("exact_count")),
+                ("Minor discrepancies", score.get("minor_count")),
+                ("Moderate discrepancies", score.get("moderate_count")),
+                ("Major discrepancies", score.get("major_count")),
+                ("Critical discrepancies", score.get("critical_count")),
+                ("Missing values", score.get("missing_count")),
+            ],
+            max_value=max(_coerce_number(score.get("possible_points")) or 100, 100),
+        )
+    severity_chart = _chart_severity_distribution(structured)
+    if severity_chart:
+        _add_chart_to_document(document, severity_chart)
+    discrepancy_chart = _chart_discrepancy_types(structured)
+    if discrepancy_chart:
+        _add_chart_to_document(document, discrepancy_chart)
+    heatmap = _chart_discrepancy_heatmap(structured)
+    if heatmap:
+        h = document.add_heading("Heat Map of Discrepancy Concentration", level=2)
+        for run in h.runs:
+            run.font.color.rgb = UCMB_PRIMARY_BLUE
+        _add_chart_to_document(document, heatmap, width_inches=6.5)
+
+
+def _render_section_facility_performance(document, structured, sections, facility_count):
+    _add_section_heading(document, "Facility Performance")
+    _add_narrative_paragraphs(document, sections.get("facility_performance"))
+    if facility_count > 1:
+        chart = _chart_facility_scores(structured)
+        if chart:
+            _add_chart_to_document(document, chart)
+    facility_rows = [
+        [
+            item.get("facility_name"),
+            item.get("dqa_score"),
+            item.get("score_category"),
+            item.get("exact_count"),
+            item.get("critical_count"),
+            item.get("open_corrective_actions"),
+        ]
+        for item in structured.get("facility_score_ranking", [])
+    ]
+    _add_data_table(
+        document,
+        "Facility Performance Table",
+        ["Facility", "DQA score", "Category", "Exact", "Critical", "Open actions"],
+        facility_rows,
+    )
+
+
+def _render_section_indicator_findings(document, structured, sections, facility_count):
+    _add_section_heading(document, "Indicator-Level Findings")
+    _add_narrative_paragraphs(document, sections.get("indicator_findings"))
+    chart = _chart_indicator_performance(structured)
+    if chart:
+        _add_chart_to_document(document, chart)
+    indicator_rows = [
+        [
+            item.get("indicator_name"),
+            item.get("hmis_code"),
+            item.get("exact_match_rate"),
+            item.get("major_discrepancy_count"),
+            item.get("critical_discrepancy_count"),
+            item.get("worst_facilities") if isinstance(item.get("worst_facilities"), str) else ", ".join(item.get("worst_facilities") or []),
+        ]
+        for item in structured.get("indicator_findings", [])
+    ]
+    _add_data_table(
+        document,
+        "Indicator Statistical Findings",
+        ["Indicator", "HMIS code", "Exact rate", "Major", "Critical", "Worst facilities"],
+        indicator_rows,
+    )
+
+
+def _render_section_dhis2_sync(document, structured, sections, facility_count):
+    _add_section_heading(document, "DHIS2 Synchronization Findings")
+    _add_narrative_paragraphs(document, sections.get("dhis2_synchronization"))
+    dhis2 = structured.get("dhis2_sync_summary") or {}
+    if dhis2:
+        _add_score_card_table(
+            document,
+            "DHIS2 Synchronization Summary",
+            [
+                ("Values successfully pulled", dhis2.get("dhis2_values_successfully_pulled")),
+                ("No-data responses", dhis2.get("dhis2_no_data_count")),
+                ("Sync errors", dhis2.get("dhis2_error_count")),
+            ],
+            max_value=max(
+                (_coerce_number(dhis2.get("dhis2_values_successfully_pulled")) or 0)
+                + (_coerce_number(dhis2.get("dhis2_no_data_count")) or 0)
+                + (_coerce_number(dhis2.get("dhis2_error_count")) or 0),
+                1,
+            ),
+        )
+        if dhis2.get("last_sync_time"):
+            p = document.add_paragraph(f"Last DHIS2 sync time: {dhis2['last_sync_time']}")
+            p.runs[0].font.size = Pt(8)
+            p.runs[0].font.italic = True
+
+
+def _render_section_source_documents(document, structured, sections, facility_count):
+    _add_section_heading(document, "Source Document Findings")
+    _add_narrative_paragraphs(document, sections.get("source_documents"))
+    checks = structured.get("source_document_checks") or []
+    if checks:
+        rows = [
+            [
+                item.get("source_document_name"),
+                "Yes" if item.get("available") else "No",
+                "Yes" if item.get("complete") else "No",
+                "Yes" if item.get("legible") else "No",
+                "No" if item.get("missing_pages") else "Yes",
+            ]
+            for item in checks
+        ]
+        _add_data_table(
+            document,
+            "Source Document Checklist",
+            ["Source Document", "Available", "Complete", "Legible", "All Pages Present"],
+            rows,
+        )
+
+
+def _render_section_root_causes(document, structured, sections, facility_count):
+    _add_section_heading(document, "Root-Cause Interpretation")
+    _add_narrative_paragraphs(document, sections.get("root_causes"))
+    comparison_rows = [
+        [
+            row.get("facility_name"),
+            row.get("indicator_name"),
+            row.get("hmis_code"),
+            row.get("register_value"),
+            row.get("hmis105_value"),
+            row.get("dhis2_value_at_assessment") or row.get("dhis2_value"),
+            row.get("severity"),
+            row.get("issue_type"),
+        ]
+        for row in structured.get("comparison_rows", [])
+    ]
+    _add_data_table(
+        document,
+        "Detailed Comparison Rows",
+        ["Facility", "Indicator", "HMIS", "Register", "HMIS 105", "DHIS2", "Severity", "Issue"],
+        comparison_rows,
+    )
+
+
+def _render_section_comments_context(document, structured, sections, facility_count):
+    _add_section_heading(document, "Team Comments and Contextual Observations")
+    _add_narrative_paragraphs(document, sections.get("comments_context"))
+    # Also surface the sanitized field-notes catalogue underneath the AI summary
+    _build_field_notes_section(document, structured, facility_count)
+
+
+def _render_section_corrective_actions(document, structured, sections, facility_count):
+    _add_section_heading(document, "Corrective Action Plan")
+    _add_narrative_paragraphs(document, sections.get("corrective_action_plan"))
+    actions = structured.get("corrective_actions") or []
+    if actions:
+        rows = [
+            [
+                action.get("title") or action.get("description", "")[:60],
+                action.get("severity") or action.get("priority"),
+                action.get("status"),
+                action.get("responsible_person"),
+                action.get("due_date"),
+            ]
+            for action in actions
+        ]
+        _add_data_table(
+            document,
+            "Logged Corrective Actions",
+            ["Action", "Severity", "Status", "Responsible", "Due"],
+            rows,
+        )
+
+
+def _render_section_recommendations(document, structured, sections, facility_count):
+    _add_section_heading(document, "Recommendations")
+    _add_narrative_paragraphs(document, sections.get("recommendations"))
+    # Also include the structured recommendations bullets the existing helper produces
+    _build_recommendations_section(document, structured, facility_count)
+
+
+def _render_section_limitations(document, structured, sections, facility_count):
+    _add_section_heading(document, "Limitations")
+    _add_narrative_paragraphs(document, sections.get("limitations"))
+
+
+def _render_section_conclusion(document, structured, sections, facility_count):
+    _add_section_heading(document, "Conclusion")
+    _add_narrative_paragraphs(document, sections.get("conclusion"))
+
+
+_BLENDED_SECTION_RENDERERS = [
+    ("executive_summary", _render_section_executive_summary, False),
+    ("scope_and_coverage", _render_section_scope, False),
+    ("methods", _render_section_methods, False),
+    ("overall_findings", _render_section_overall_findings, True),  # page break after
+    ("facility_performance", _render_section_facility_performance, False),
+    ("indicator_findings", _render_section_indicator_findings, True),
+    ("dhis2_synchronization", _render_section_dhis2_sync, False),
+    ("source_documents", _render_section_source_documents, False),
+    ("root_causes", _render_section_root_causes, True),
+    ("comments_context", _render_section_comments_context, False),
+    ("corrective_action_plan", _render_section_corrective_actions, False),
+    ("recommendations", _render_section_recommendations, False),
+    ("limitations", _render_section_limitations, False),
+    ("conclusion", _render_section_conclusion, False),
+]
+
+
+def _render_blended_report(document: Document, report: Report, facility_count: int) -> None:
+    """Walk through every narrative section and interleave the AI's prose with the
+    matching data tables and charts. This produces a report that reads like a
+    coherent document instead of a dashboard followed by a separate essay."""
+    structured = report.structured_input_json or {}
+    sections = structured.get("narrative_sections") or {}
+
+    document.add_page_break()
+    for section_key, renderer, page_break_after in _BLENDED_SECTION_RENDERERS:
+        # Skip sections whose data is empty AND whose narrative is empty
+        if not sections.get(section_key) and not _section_has_data(structured, section_key):
+            continue
+        renderer(document, structured, sections, facility_count)
+        if page_break_after:
+            document.add_page_break()
+
+
+def _section_has_data(structured: dict, section_key: str) -> bool:
+    """Return True if a section has any underlying data worth rendering even when
+    the AI narrative for that section is empty."""
+    if section_key in {"executive_summary", "limitations", "conclusion", "root_causes",
+                       "facility_performance", "indicator_findings", "overall_findings",
+                       "scope_and_coverage", "methods"}:
+        return True  # always render these scaffolding sections
+    if section_key == "dhis2_synchronization":
+        return bool(structured.get("dhis2_sync_summary"))
+    if section_key == "source_documents":
+        return bool(structured.get("source_document_checks"))
+    if section_key == "comments_context":
+        return any([
+            structured.get("general_facility_comments"),
+            structured.get("manager_comments"),
+            any((row.get("assessor_comment") or row.get("manager_comment")) for row in structured.get("comparison_rows") or []),
+        ])
+    if section_key == "corrective_action_plan":
+        return bool(structured.get("corrective_actions"))
+    if section_key == "recommendations":
+        return True
+    return False
+
+
 def _add_statistical_dashboard(document: Document, report: Report, facility_count: int) -> None:
     structured = report.structured_input_json or {}
     document.add_heading("Statistical Dashboard", level=1)
@@ -1495,6 +1876,7 @@ def export_report_docx(db: Session, report: Report, current_user: User) -> tuple
     _ensure_export_allowed(report, ExportType.DOCX)
     structured = report.structured_input_json or {}
     facility_count = _count_facilities(structured)
+    has_blended_sections = bool(structured.get("narrative_sections"))
 
     document = Document()
     _add_deepseek_header(document)
@@ -1503,25 +1885,25 @@ def export_report_docx(db: Session, report: Report, current_user: User) -> tuple
     # ── Cover page ──
     _add_cover_page(document, report, facility_count)
 
-    # ── Metric boxes ──
+    # ── Metric boxes (headline KPIs) ──
     _add_metric_boxes(document, report)
 
-    # ── Dashboard ──
-    _add_statistical_dashboard(document, report, facility_count)
-
-    # ── Key Findings ──
-    document.add_page_break()
-    _build_key_findings_section(document, structured, facility_count)
-
-    # ── Field Notes ──
-    _build_field_notes_section(document, structured, facility_count)
-
-    # ── Recommendations ──
-    _build_recommendations_section(document, structured, facility_count)
-
-    # ── Narrative (AI-generated content) ──
-    document.add_page_break()
-    _add_report_narrative(document, _current_report_content(report))
+    if has_blended_sections:
+        # New path: AI returned structured per-section narrative. Walk each section
+        # and interleave prose with tables and charts so the document reads as one
+        # coherent narrative rather than dashboard + essay.
+        _build_key_findings_section(document, structured, facility_count)
+        _render_blended_report(document, report, facility_count)
+    else:
+        # Legacy path: old reports (or AI failed) use the previous layout where the
+        # whole dashboard sits before a single narrative dump at the end.
+        _add_statistical_dashboard(document, report, facility_count)
+        document.add_page_break()
+        _build_key_findings_section(document, structured, facility_count)
+        _build_field_notes_section(document, structured, facility_count)
+        _build_recommendations_section(document, structured, facility_count)
+        document.add_page_break()
+        _add_report_narrative(document, _current_report_content(report))
 
     output = BytesIO()
     document.save(output)
