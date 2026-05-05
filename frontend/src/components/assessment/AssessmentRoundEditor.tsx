@@ -637,7 +637,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     setFormError(null);
     setMessage(null);
     try {
-      await userService.deactivateUser(assessor.id);
+      await userService.deleteUser(assessor.id);
       setAllAssessors((current) => current.filter((item) => item.id !== assessor.id));
       removeManagedSharedLoginId(assessor.id);
       if (editingAssessorId === assessor.id) {

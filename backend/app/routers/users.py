@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.dependencies import CurrentUser, DbSession, require_roles
 from app.models.base import UserRole
@@ -11,6 +11,7 @@ from app.schemas.user import MessageResponse, UserCreate, UserRead, UserUpdate
 from app.services.audit_service import log_audit_event
 from app.services.user_service import (
     create_user,
+    delete_assessor_user,
     get_user_by_id,
     list_users,
     set_user_active_state,
@@ -97,6 +98,31 @@ def update_user_endpoint(
     )
     db.commit()
     return UserRead.model_validate(user)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_user_endpoint(
+    user_id: uuid.UUID,
+    request: Request,
+    db: DbSession,
+    current_user: User = Depends(require_roles(UserRole.MANAGER)),
+) -> Response:
+    user = get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    email = user.email
+    delete_assessor_user(db, user)
+    log_audit_event(
+        db,
+        actor_user_id=current_user.id,
+        action="user_deleted",
+        entity_type="user",
+        entity_id=user_id,
+        description=f"Deleted assessor/shared group account {email}.",
+        request=request,
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/{user_id}/deactivate", response_model=UserRead)

@@ -106,6 +106,45 @@ def test_deleting_round_frees_shared_group_login_email(
     assert recreated_user_response.json()["email"] == user_payload["email"]
 
 
+def test_deleting_shared_group_login_frees_email(client, manager_token) -> None:
+    user_payload = {
+        "full_name": "Assessment Group B",
+        "email": "group-b@ucmb-dqa.local",
+        "password": "ChangeMe123!",
+        "role": "ASSESSOR",
+        "is_active": True,
+    }
+    user_response = client.post(
+        "/api/users",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json=user_payload,
+    )
+    assert user_response.status_code == 201
+
+    delete_response = client.delete(
+        f"/api/users/{user_response.json()['id']}",
+        headers={"Authorization": f"Bearer {manager_token}"},
+    )
+    assert delete_response.status_code == 204
+
+    recreated_user_response = client.post(
+        "/api/users",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json=user_payload,
+    )
+    assert recreated_user_response.status_code == 201
+    assert recreated_user_response.json()["email"] == user_payload["email"]
+
+
+def test_manager_accounts_cannot_be_deleted(client, manager_token, seeded_manager) -> None:
+    response = client.delete(
+        f"/api/users/{seeded_manager.id}",
+        headers={"Authorization": f"Bearer {manager_token}"},
+    )
+
+    assert response.status_code == 409
+
+
 def test_non_manager_cannot_create_assessment_round(client, assessor_token) -> None:
     response = client.post(
         "/api/assessment-rounds",

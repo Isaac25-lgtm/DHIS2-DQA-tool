@@ -26,5 +26,8 @@ export const userService = {
     const { data } = await api.patch<User>(`/users/${userId}/deactivate`);
     return data;
   },
-};
 
+  async deleteUser(userId: string) {
+    await api.delete(`/users/${userId}`);
+  },
+};

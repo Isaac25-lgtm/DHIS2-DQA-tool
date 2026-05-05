@@ -117,6 +117,17 @@ def set_user_active_state(db: Session, user: User, is_active: bool) -> User:
     return user
 
 
+def delete_assessor_user(db: Session, user: User) -> None:
+    if user.role != UserRole.ASSESSOR:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only assessor/shared group accounts can be deleted.",
+        )
+    _remove_user_from_all_assessment_assignments(db, user.id)
+    db.delete(user)
+    db.flush()
+
+
 def deactivate_other_assessor_accounts(db: Session, *, keep_user_ids: set[uuid.UUID]) -> list[User]:
     assessor_query = select(User).where(
         User.role == UserRole.ASSESSOR,
