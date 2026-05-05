@@ -24,6 +24,7 @@ def test_readiness_endpoint_returns_ready_when_database_is_up() -> None:
     assert response.status_code == 200
     assert payload["status"] == "ready"
     assert payload["database"]["status"] == "ok"
+    assert payload["schema"]["status"] == "ok"
 
 
 def test_health_stays_200_when_database_unavailable(monkeypatch) -> None:
@@ -47,3 +48,19 @@ def test_readiness_returns_503_when_database_unavailable(monkeypatch) -> None:
     detail = body["detail"]
     assert detail["status"] == "not_ready"
     assert detail["database"]["status"] == "unavailable"
+
+
+def test_readiness_returns_503_when_required_schema_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(health_router, "_check_database", lambda: "ok")
+    monkeypatch.setattr(
+        health_router,
+        "_check_required_tables",
+        lambda: {"alembic_version": "ok", "users": "ok", "audit_logs": "unavailable"},
+    )
+    client = TestClient(app)
+    response = client.get("/api/ready")
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "not_ready"
+    assert detail["schema"]["status"] == "unavailable"

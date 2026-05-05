@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.dependencies import CurrentUser, DbSession
 from app.schemas.user import LoginRequest, LoginResponse, MessageResponse, TokenUser
 from app.security import create_access_token
-from app.services.audit_service import log_audit_event
+from app.services.audit_service import try_log_audit_event
 from app.services.user_service import authenticate_user, mark_login_success
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def login(payload: LoginRequest, request: Request, db: DbSession) -> LoginResponse:
     user = authenticate_user(db, payload.email, payload.password)
     if not user:
-        log_audit_event(
+        try_log_audit_event(
             db,
             action="login_failure",
             entity_type="user",
@@ -29,7 +29,7 @@ def login(payload: LoginRequest, request: Request, db: DbSession) -> LoginRespon
         )
 
     mark_login_success(db, user)
-    log_audit_event(
+    try_log_audit_event(
         db,
         actor_user_id=user.id,
         action="login_success",
@@ -54,4 +54,3 @@ def get_me(current_user: CurrentUser) -> TokenUser:
 @router.post("/logout", response_model=MessageResponse)
 def logout() -> MessageResponse:
     return MessageResponse(message="Logged out successfully.")
-

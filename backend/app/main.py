@@ -1,7 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 import app.models  # noqa: F401
 from app.config import Settings, get_settings
@@ -84,6 +86,15 @@ app = FastAPI(
 
 configure_middleware(app)
 app.include_router(api_router, prefix="/api")
+
+
+@app.exception_handler(SQLAlchemyError)
+async def database_exception_handler(_: Request, exc: SQLAlchemyError) -> JSONResponse:
+    logger.exception("Database operation failed.", exc_info=exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database operation failed. Confirm migrations and database connectivity."},
+    )
 
 
 @app.get("/", tags=["root"])

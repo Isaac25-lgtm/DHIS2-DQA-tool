@@ -8,6 +8,8 @@ from app.database import SessionLocal
 
 router = APIRouter(tags=["health"])
 
+_REQUIRED_TABLES = ("alembic_version", "users", "audit_logs")
+
 
 def _check_database() -> str:
     try:
@@ -16,6 +18,21 @@ def _check_database() -> str:
         return "ok"
     except Exception:
         return "unavailable"
+
+
+def _check_required_tables() -> dict[str, str]:
+    checks: dict[str, str] = {}
+    try:
+        with SessionLocal() as session:
+            for table_name in _REQUIRED_TABLES:
+                try:
+                    session.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
+                    checks[table_name] = "ok"
+                except Exception:
+                    checks[table_name] = "unavailable"
+    except Exception:
+        return {table_name: "unavailable" for table_name in _REQUIRED_TABLES}
+    return checks
 
 
 @router.get("/health")
@@ -40,15 +57,18 @@ def health_check() -> dict[str, object]:
 
 @router.get("/ready")
 def readiness_check() -> dict[str, object]:
-    """Strict readiness probe - fails fast (503) when the database is down."""
+    """Strict readiness probe - fails fast when database or core schema is down."""
     settings = get_settings()
     database_status = _check_database()
+    table_checks = _check_required_tables() if database_status == "ok" else {}
+    schema_status = "ok" if table_checks and all(value == "ok" for value in table_checks.values()) else "unavailable"
     body: dict[str, object] = {
-        "status": "ready" if database_status == "ok" else "not_ready",
+        "status": "ready" if database_status == "ok" and schema_status == "ok" else "not_ready",
         "environment": settings.environment,
         "timestamp": datetime.now(UTC).isoformat(),
         "database": {"status": database_status},
+        "schema": {"status": schema_status, "required_tables": table_checks},
     }
-    if database_status != "ok":
+    if body["status"] != "ready":
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=body)
     return body
