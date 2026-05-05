@@ -89,6 +89,7 @@ Push the `main` branch (or whichever branch you want Render to deploy from). Mak
    | `DATABASE_URL` | backend | The Neon connection string from Step 1 (full URL, including `?sslmode=require`) |
    | `SECRET_KEY` | backend | A long random string. Generate with `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
    | `CORS_ORIGINS` | backend | JSON array containing your Render frontend URL, e.g. `["https://ucmb-dqa-frontend.onrender.com"]` |
+   | `DEFAULT_MANAGER_PASSWORD` | backend | Required only if you temporarily set `SEED_DEFAULT_MANAGER=true`. Use a strong password, not `ChangeMe123!` |
    | `AI_API_KEY` | backend | Your DeepSeek (or other provider) API key. Optional — leave blank to use deterministic template fallback reporting |
    | `AI_PROVIDER` | backend | e.g. `deepseek` |
    | `AI_MODEL` | backend | e.g. `deepseek-v4-pro` |
@@ -101,17 +102,18 @@ Push the `main` branch (or whichever branch you want Render to deploy from). Mak
 `render.yaml` ships with `SEED_DEFAULT_MANAGER=false` for safety. To create the first manager account:
 
 1. After the first successful deploy, open the backend service in the Render dashboard.
-2. Either set `SEED_DEFAULT_MANAGER=true` plus `DEFAULT_MANAGER_EMAIL` and `DEFAULT_MANAGER_PASSWORD` env vars and trigger a redeploy (the lifespan creates the manager on next boot if the email does not yet exist), or
+2. Either set `SEED_DEFAULT_MANAGER=true` plus `DEFAULT_MANAGER_EMAIL` and a strong `DEFAULT_MANAGER_PASSWORD` env var and trigger a redeploy (the lifespan creates the manager on next boot if the email does not yet exist), or
 3. Use the Render shell tab and run a one-off Python script that inserts a manager user via `app.services.user_service`.
 
-Either way, **change the default password immediately** after first sign-in.
+Either way, turn `SEED_DEFAULT_MANAGER=false` again after the first manager exists. The backend refuses to boot outside development if seeding is enabled with the scaffold password `ChangeMe123!`.
 
 ### 5. Verify the deployment
 
-- Backend health: `https://ucmb-dqa-backend.onrender.com/api/health` → returns `{"status":"ok"}`.
+- Backend readiness: `https://ucmb-dqa-backend.onrender.com/api/ready` returns `{"status":"ready"}` only when Postgres is reachable. Render points its health check here.
+- Backend status: `https://ucmb-dqa-backend.onrender.com/api/health` returns process status and database availability for inspection.
 - Frontend: open the static-site URL Render assigned to `ucmb-dqa-frontend`. The login page should render.
 - Sign in as the default manager.
-- Open Settings → DHIS2 sign-in to enable live DHIS2 search and import.
+- Open Settings - DHIS2 sign-in as a manager to enable live DHIS2 search, import, and pre-sync.
 
 ### Notes about the Render free tier
 
@@ -281,7 +283,7 @@ Default local login:
 
 ```text
 Email: admin@ucmb-dqa.local
-Password: ChangeMe123!
+Password: ChangeMe123! (development only; production startup rejects this password when `SEED_DEFAULT_MANAGER=true`)
 ```
 
 Change this password immediately in any shared or production-like environment.
@@ -487,6 +489,7 @@ Reports and exports:
 System:
 
 - `GET /api/health`
+- `GET /api/ready`
 - `GET /api/system/info`
 
 ## Testing and Verification

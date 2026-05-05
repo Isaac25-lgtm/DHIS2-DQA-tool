@@ -164,7 +164,7 @@ The assessor workspace should prioritize clarity under field conditions.
 - Hide or disable final submission when the current user does not have `can_submit`
 - Explain disabled submit action with: `Only the Team Lead can send this assessment.`
 - Use `Send to Manager` as the field-team final submission label
-- Use one `Sync with DHIS2` action to sync local draft data and refresh read-only DHIS2 values when online
+- Use one draft sync action for assessor-entered data. DHIS2 value refresh belongs to manager pre-sync/review workflows only.
 
 ## DHIS2 Search and Import UI Pattern
 

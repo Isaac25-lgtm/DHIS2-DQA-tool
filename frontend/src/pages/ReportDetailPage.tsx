@@ -56,7 +56,7 @@ export function ReportDetailPage() {
   }, [reportId]);
 
   const canEdit = user?.role === "MANAGER";
-  const canReview = user?.role === "MANAGER" || user?.role === "REVIEWER";
+  const canReview = user?.role === "MANAGER";
   const canApprove = user?.role === "MANAGER";
   const canExportDocx = report && ["GENERATED", "REVIEWED", "APPROVED", "EXPORTED"].includes(report.status);
   const canExportFinal = report && (report.status === "APPROVED" || report.status === "EXPORTED");

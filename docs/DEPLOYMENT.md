@@ -171,16 +171,18 @@ This repo includes `render.yaml` for a lightweight Render Blueprint:
 
 - `ucmb-dqa-backend`: Python web service from `backend/`
 - `ucmb-dqa-frontend`: static React site from `frontend/`
-- `ucmb-dqa-postgres`: managed PostgreSQL database
+- external Neon PostgreSQL, provided through the backend `DATABASE_URL`
 
 Render setup notes:
 
 - connect the GitHub repository to Render
 - create services from the Blueprint
+- set `DATABASE_URL` on the backend service to the Neon pooled connection string, including `?sslmode=require`
 - set `SECRET_KEY` on the backend service
 - set `CORS_ORIGINS` on the backend service to the deployed frontend URL
 - set `VITE_API_BASE_URL` on the frontend static service to `https://<backend-service>.onrender.com/api`
-- keep `SEED_DEFAULT_MANAGER=false` after initial setup
+- keep `SEED_DEFAULT_MANAGER=false` after initial setup; if you temporarily enable it, use a strong `DEFAULT_MANAGER_PASSWORD`
+- Render checks backend readiness at `/api/ready`, which returns 503 if Postgres is unavailable
 - the backend start command runs `alembic upgrade head` before starting Uvicorn
 - sign into DHIS2 from Manager Settings after deployment; DHIS2 passwords are not stored in Render environment variables
 

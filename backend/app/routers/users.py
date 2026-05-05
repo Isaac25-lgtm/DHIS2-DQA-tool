@@ -19,6 +19,16 @@ from app.services.user_service import (
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+_ASSIGNABLE_ROLES = {UserRole.MANAGER, UserRole.ASSESSOR}
+
+
+def _ensure_assignable_role(role: UserRole) -> None:
+    if role not in _ASSIGNABLE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only MANAGER and ASSESSOR accounts can be created or assigned.",
+        )
+
 
 @router.get("", response_model=list[UserRead])
 def get_users(
@@ -35,6 +45,7 @@ def create_user_endpoint(
     db: DbSession,
     current_user: User = Depends(require_roles(UserRole.MANAGER)),
 ) -> UserRead:
+    _ensure_assignable_role(payload.role)
     user = create_user(db, payload)
     log_audit_event(
         db,
@@ -73,6 +84,7 @@ def update_user_endpoint(
     user = get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    _ensure_assignable_role(payload.role)
     user = update_user(db, user, payload)
     log_audit_event(
         db,

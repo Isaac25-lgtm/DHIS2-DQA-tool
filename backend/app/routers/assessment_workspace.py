@@ -34,7 +34,7 @@ def get_assessment_workspace(
     db: DbSession,
     current_user: CurrentUser,
 ) -> AssessmentWorkspaceResponse:
-    workspace = build_assessment_workspace_response(db, assessment_facility_id, current_user, refresh_dhis2=True)
+    workspace = build_assessment_workspace_response(db, assessment_facility_id, current_user, refresh_dhis2=False)
     log_audit_event(
         db,
         actor_user_id=current_user.id,
@@ -44,26 +44,6 @@ def get_assessment_workspace(
         description=f"Opened assessment workspace for assignment {assessment_facility_id}.",
         request=request,
     )
-    if workspace.dhis2_pull_message:
-        log_audit_event(
-            db,
-            actor_user_id=current_user.id,
-            action="dhis2_pull_failed",
-            entity_type="assessment_facility",
-            entity_id=assessment_facility_id,
-            description=f"DHIS2 pull failed or was unavailable for assignment {assessment_facility_id}.",
-            request=request,
-        )
-    elif workspace.workspace_mode == "EDIT":
-        log_audit_event(
-            db,
-            actor_user_id=current_user.id,
-            action="dhis2_pull_succeeded",
-            entity_type="assessment_facility",
-            entity_id=assessment_facility_id,
-            description=f"Pulled DHIS2 values for assignment {assessment_facility_id}.",
-            request=request,
-        )
     db.commit()
     return workspace
 
@@ -100,16 +80,10 @@ def retry_dhis2_pull(
     assessment_facility_id: uuid.UUID,
     request: Request,
     db: DbSession,
-    current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.ASSESSOR)),
+    current_user: User = Depends(require_roles(UserRole.MANAGER)),
 ) -> Dhis2PullResponse:
     assessment_facility = get_assessment_facility_for_workspace(db, assessment_facility_id)
-    if current_user.role == UserRole.ASSESSOR:
-        if determine_workspace_mode(assessment_facility, current_user) != "EDIT":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This assessment cannot refresh DHIS2 values right now.",
-            )
-    elif assessment_facility.assessment_round.status in {AssessmentRoundStatus.CLOSED, AssessmentRoundStatus.ARCHIVED}:
+    if assessment_facility.assessment_round.status in {AssessmentRoundStatus.CLOSED, AssessmentRoundStatus.ARCHIVED}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Closed assessment rounds cannot refresh DHIS2 values.",
@@ -145,13 +119,13 @@ def sync_with_dhis2(
     assessment_facility_id: uuid.UUID,
     request: Request,
     db: DbSession,
-    current_user: User = Depends(require_roles(UserRole.ASSESSOR)),
+    current_user: User = Depends(require_roles(UserRole.MANAGER)),
 ) -> Dhis2PullResponse:
     assessment_facility = get_assessment_facility_for_workspace(db, assessment_facility_id)
-    if determine_workspace_mode(assessment_facility, current_user) != "EDIT":
+    if assessment_facility.assessment_round.status in {AssessmentRoundStatus.CLOSED, AssessmentRoundStatus.ARCHIVED}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This assessment cannot sync with DHIS2 right now.",
+            detail="Closed assessment rounds cannot sync with DHIS2.",
         )
     response = pull_dhis2_values_for_assessment(
         db,

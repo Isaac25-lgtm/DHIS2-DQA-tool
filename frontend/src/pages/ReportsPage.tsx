@@ -38,7 +38,7 @@ export function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<ReportType>("FACILITY_DQA_REPORT");
-  const canGenerate = user?.role === "MANAGER" || user?.role === "REVIEWER";
+  const canGenerate = user?.role === "MANAGER";
 
   useEffect(() => {
     const loadReports = async () => {

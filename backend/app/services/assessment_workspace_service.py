@@ -351,16 +351,14 @@ def build_assessment_workspace_response(
     ensure_dqa_rows_exist(db, assessment_facility)
 
     workspace_mode = determine_workspace_mode(assessment_facility, current_user)
+    # DHIS2 values are pre-synced by the manager before publishing. Opening an
+    # assessor workspace never triggers a DHIS2 call; assessors see the values
+    # already attached to the assessment.
     dhis2_pull_message: str | None = None
+    _ = refresh_dhis2  # parameter retained for callers; no longer triggers a pull
 
     if current_user.role == UserRole.ASSESSOR and workspace_mode == "EDIT":
         mark_workspace_opened(db, assessment_facility)
-        if refresh_dhis2:
-            dhis2_pull_message = pull_dhis2_values_for_assessment(
-                db,
-                assessment_facility,
-                triggered_by_user=current_user,
-            ).message
 
     ordered_indicator_ids = [item.indicator_id for item in _ordered_selected_indicators(assessment_facility)]
     value_order = {indicator_id: index for index, indicator_id in enumerate(ordered_indicator_ids)}
@@ -412,8 +410,10 @@ def submit_assessment(db: Session, assessment_facility: AssessmentFacility, curr
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the assigned shared group login can submit this assessment unless submit permission is granted.",
         )
-    if any(value.dhis2_value_at_assessment is None for value in assessment_facility.dqa_values):
-        pull_dhis2_values_for_assessment(db, assessment_facility, triggered_by_user=current_user)
+    # DHIS2 values are populated by the manager during pre-sync. Submission no
+    # longer triggers a backend DHIS2 call from the assessor session — values
+    # the manager did not pre-sync remain null and are filled later via the
+    # manager-only refresh path.
 
     required_indicator_ids = {
         item.indicator_id

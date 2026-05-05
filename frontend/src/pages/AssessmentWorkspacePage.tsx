@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCcw, Save, Send } from "lucide-react";
+import { Save, Send } from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
 import { AssessmentSummaryCard } from "../components/assessment/AssessmentSummaryCard";
 import { AssessmentValueTable } from "../components/assessment/AssessmentValueTable";
@@ -12,7 +12,6 @@ import { useAuth } from "../hooks/useAuth";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { assessmentAssignmentService } from "../services/assessmentAssignmentService";
 import { assessmentWorkspaceService } from "../services/assessmentWorkspaceService";
-import { dhis2Service } from "../services/dhis2Service";
 import {
   getAssessmentDraft,
   getCachedAssessment,
@@ -100,7 +99,6 @@ function getPrimaryBanner(args: {
   readOnly: boolean;
   hasConflict: boolean;
   draftState: { sync_status?: string | null; error_message?: string | null } | null;
-  syncingWithDhis2: boolean;
   syncResult: SyncDraftResult | null;
   message: string | null;
   statusMessage: string | null;
@@ -136,9 +134,6 @@ function getPrimaryBanner(args: {
   }
   if (!args.isOnline) {
     return { variant: "offline", message: "You are offline. Your work is being saved on this device." };
-  }
-  if (args.syncingWithDhis2) {
-    return { variant: "syncing", message: "Syncing with DHIS2..." };
   }
   if (
     args.draftState?.sync_status === "PENDING_SYNC" ||
@@ -180,7 +175,6 @@ export function AssessmentWorkspacePage() {
   const [generalAssessmentComment, setGeneralAssessmentComment] = useState("");
   const [seedDraft, setSeedDraft] = useState<AssessmentDraft | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncingWithDhis2, setSyncingWithDhis2] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -315,17 +309,6 @@ export function AssessmentWorkspacePage() {
   });
 
   const readOnly = workspace?.workspace_mode === "READ_ONLY";
-  // DHIS2 sync is allowed at every phase the round is still open, so that whoever
-  // is in front of the workspace can fill in the DHIS2 column whenever the network
-  // returns — during initial assessment, after the assessor sends to manager, or
-  // during the manager's review. Only CLOSED and ARCHIVED rounds block it.
-  const roundStatus = workspace?.assessment_round.status ?? "";
-  const roundIsLockedDown = ["CLOSED", "ARCHIVED"].includes(roundStatus);
-  const canSyncWithDhis2 =
-    Boolean(workspace) &&
-    isOnline &&
-    !roundIsLockedDown &&
-    (user?.role === "MANAGER" || user?.role === "ASSESSOR" || user?.role === "REVIEWER");
   const currentTeamMember = workspace?.assessment_facility.team_members.find((member) => member.user_id === user?.id && member.is_active);
   const canSubmit = Boolean(
     workspace?.workspace_mode === "EDIT" &&
@@ -359,38 +342,6 @@ export function AssessmentWorkspacePage() {
           : item,
       ),
     );
-  };
-
-  const handleSyncWithDhis2 = async () => {
-    if (!assessmentFacilityId) {
-      return;
-    }
-
-    if (!isOnline) {
-      setMessage("You are offline. Your work is saved locally and will sync when network returns.");
-      return;
-    }
-
-    setSyncingWithDhis2(true);
-    setMessage(null);
-    try {
-      const savedDraft = await saveNow(false, "PENDING_SYNC");
-      if (savedDraft) {
-        const draftSync = await syncService.syncAssessmentDraft(assessmentFacilityId);
-        setSyncResult(draftSync);
-        if (draftSync.status === "FAILED" || draftSync.status === "RELOGIN_REQUIRED") {
-          setMessage(draftSync.message);
-          return;
-        }
-      }
-      const response = await dhis2Service.syncAssessmentWithDhis2(assessmentFacilityId);
-      await loadWorkspace({ source: "manual" });
-      setMessage(response.message ?? "Synced with DHIS2.");
-    } catch (retryError) {
-      setMessage(retryError instanceof Error ? retryError.message : "Sync with DHIS2 failed.");
-    } finally {
-      setSyncingWithDhis2(false);
-    }
   };
 
   const handleSubmitAssessment = async () => {
@@ -443,7 +394,6 @@ export function AssessmentWorkspacePage() {
     readOnly: Boolean(readOnly),
     hasConflict,
     draftState,
-    syncingWithDhis2,
     syncResult,
     message,
     statusMessage,
@@ -469,16 +419,6 @@ export function AssessmentWorkspacePage() {
           >
             <Save size={16} />
             Save locally
-          </Button>
-          <Button
-            variant="secondary"
-            className="gap-2"
-            onClick={() => void handleSyncWithDhis2()}
-            disabled={!canSyncWithDhis2 || syncingWithDhis2}
-            title={!isOnline ? "Offline – your work is saved locally and will sync when network returns" : undefined}
-          >
-            <RefreshCcw size={16} className={syncingWithDhis2 ? "animate-spin" : undefined} />
-            {syncingWithDhis2 ? "Syncing..." : "Sync with DHIS2"}
           </Button>
           {canSubmit ? (
             <Button className="ml-auto gap-2" onClick={() => void handleSubmitAssessment()} disabled={submitting}>

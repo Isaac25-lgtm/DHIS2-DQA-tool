@@ -10,12 +10,18 @@ import { AssessmentResultsPage } from "../pages/AssessmentResultsPage";
 import { AssessmentWorkspacePage } from "../pages/AssessmentWorkspacePage";
 import { CorrectiveActionsPage } from "../pages/CorrectiveActionsPage";
 import { DashboardPage } from "../pages/DashboardPage";
+import { FacilitiesPage } from "../pages/FacilitiesPage";
 import { FacilityDqaProfilePage } from "../pages/FacilityDqaProfilePage";
 import { IndicatorAnalyticsPage } from "../pages/IndicatorAnalyticsPage";
+import { IndicatorLibraryPage } from "../pages/IndicatorLibraryPage";
 import { LoginPage } from "../pages/LoginPage";
 import { MyAssessmentsPage } from "../pages/MyAssessmentsPage";
+import { ReportDetailPage } from "../pages/ReportDetailPage";
+import { ReportGeneratorPage } from "../pages/ReportGeneratorPage";
+import { ReportsPage } from "../pages/ReportsPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { SubmissionsPage } from "../pages/SubmissionsPage";
+import { UserManagementPage } from "../pages/UserManagementPage";
 import type { UserRole } from "../types";
 
 function ProtectedOutlet() {
@@ -57,27 +63,27 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedOutlet />}>
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER"]} />}>
+        <Route element={<RoleRoute allowedRoles={["MANAGER"]} />}>
           <Route path="/assessment-rounds" element={<AssessmentRoundsPage />} />
+          <Route path="/assessment-rounds/new" element={<AssessmentRoundBuilderPage />} />
           <Route path="/assessment-rounds/:id" element={<AssessmentRoundDetailPage />} />
           <Route path="/assessment-facilities/:assessmentFacilityId/workspace" element={<AssessmentWorkspacePage />} />
           <Route path="/submissions" element={<SubmissionsPage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["MANAGER"]} />}>
-          <Route path="/assessment-rounds/new" element={<AssessmentRoundBuilderPage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["ASSESSOR"]} />}>
-          <Route path="/my-assessments" element={<MyAssessmentsPage />} />
-          <Route path="/my-assessments/:assessmentFacilityId" element={<AssessmentWorkspacePage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER", "VIEWER"]} />}>
+          <Route path="/facilities" element={<FacilitiesPage />} />
+          <Route path="/indicators" element={<IndicatorLibraryPage />} />
           <Route path="/analytics" element={<AnalyticsDashboardPage />} />
           <Route path="/assessment-results/:assessmentFacilityId" element={<AssessmentResultsPage />} />
           <Route path="/facility-dqa/:assessmentFacilityId" element={<FacilityDqaProfilePage />} />
           <Route path="/indicator-analytics" element={<IndicatorAnalyticsPage />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={["MANAGER", "REVIEWER", "ASSESSOR"]} />}>
           <Route path="/corrective-actions" element={<CorrectiveActionsPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/generate" element={<ReportGeneratorPage />} />
+          <Route path="/reports/:reportId" element={<ReportDetailPage />} />
+          <Route path="/users" element={<UserManagementPage />} />
+        </Route>
+        <Route element={<RoleRoute allowedRoles={["ASSESSOR"]} />}>
+          <Route path="/my-assessments" element={<MyAssessmentsPage />} />
+          <Route path="/my-assessments/:assessmentFacilityId" element={<AssessmentWorkspacePage />} />
         </Route>
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

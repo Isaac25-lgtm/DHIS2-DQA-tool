@@ -153,7 +153,7 @@ def check_dhis2_connection() -> Dhis2ConnectionStatus:
             last_checked_at=checked_at,
             message=(
                 "DHIS2 is currently unreachable. The platform will continue to accept "
-                "assessment data; managers and assessors can sync DHIS2 values once "
+                "assessment data; managers can refresh DHIS2 values once "
                 "the connection returns."
             ),
             reachability="unreachable",
@@ -465,7 +465,7 @@ def fetch_dhis2_values(
                 identifier,
                 status=DHIS2_NOT_CONFIGURED,
                 extracted_at=extracted_at,
-                error_message="DHIS2 is not signed in. A manager or assessor must sign in to DHIS2 from Settings.",
+                error_message="DHIS2 is not signed in. A manager must sign in to DHIS2 from Settings.",
             )
             for identifier in identifiers
         }

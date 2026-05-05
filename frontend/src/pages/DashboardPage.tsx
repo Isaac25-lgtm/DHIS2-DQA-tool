@@ -45,7 +45,7 @@ export function DashboardPage() {
     const load = async () => {
       setLoading(true);
       try {
-        if (user?.role === "MANAGER" || user?.role === "REVIEWER") {
+        if (user?.role === "MANAGER") {
           const roundList = await assessmentRoundService.listRounds().catch(() => []);
           const nextRoundId = selectedRoundId || roundList[0]?.id || "";
           const submissionDashboard = await submissionService

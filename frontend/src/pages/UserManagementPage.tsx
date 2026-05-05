@@ -18,7 +18,7 @@ const emptyForm: UserFormPayload = {
   is_active: true,
 };
 
-const roleOptions: UserRole[] = ["MANAGER", "ASSESSOR", "REVIEWER", "VIEWER"];
+const roleOptions: UserRole[] = ["MANAGER", "ASSESSOR"];
 
 export function UserManagementPage() {
   const { user } = useAuth();
@@ -184,7 +184,7 @@ export function UserManagementPage() {
 
       <Card
         title={editingUserId ? "Edit Account" : "Create Account"}
-        subtitle="Managers can add or update assessors, reviewers, viewers, and other managers."
+        subtitle="Managers can add or update other managers and assessors."
       >
         <div className="space-y-4">
           <div>

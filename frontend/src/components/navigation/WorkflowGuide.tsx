@@ -16,15 +16,9 @@ function messageFor(role: string | undefined, path: string) {
   }
   if (role === "ASSESSOR") {
     if (path.startsWith("/my-assessments/")) {
-      return "Enter register and HMIS 105 values, save locally as you work, sync with DHIS2 when online, then Send to Manager.";
+      return "Enter register and HMIS 105 values, save locally as you work, sync your draft when online, then Send to Manager.";
     }
     return "Open My Assessments, choose your assigned facility, and work from the cached assessment package if the network drops.";
-  }
-  if (role === "REVIEWER") {
-    return "Reviewer flow: inspect submissions, run or refresh analysis, review corrective actions, and support final reporting.";
-  }
-  if (role === "VIEWER") {
-    return "Viewer flow: use summary analytics only. This role is read-only.";
   }
   return null;
 }

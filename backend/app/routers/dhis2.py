@@ -25,7 +25,7 @@ def login_to_dhis2(
     payload: Dhis2LoginRequest,
     request: Request,
     db: DbSession,
-    current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.ASSESSOR)),
+    current_user: User = Depends(require_roles(UserRole.MANAGER)),
 ) -> Dhis2ConnectionStatus:
     status_response = sign_in_to_dhis2(
         base_url=payload.base_url,
@@ -48,7 +48,7 @@ def login_to_dhis2(
 def logout_from_dhis2(
     request: Request,
     db: DbSession,
-    current_user: User = Depends(require_roles(UserRole.MANAGER, UserRole.ASSESSOR)),
+    current_user: User = Depends(require_roles(UserRole.MANAGER)),
 ) -> Dhis2ConnectionStatus:
     clear_dhis2_session()
     status_response = check_dhis2_connection()

@@ -19,7 +19,7 @@ export function CorrectiveActionsPage() {
     void load();
   }, []);
 
-  const managerLike = user?.role === "MANAGER" || user?.role === "REVIEWER";
+  const managerLike = user?.role === "MANAGER";
 
   return (
     <div className="space-y-6">

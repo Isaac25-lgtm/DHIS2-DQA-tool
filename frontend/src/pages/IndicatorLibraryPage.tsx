@@ -25,7 +25,7 @@ const groupOptions = [
 export function IndicatorLibraryPage() {
   const { user } = useAuth();
   const canManage = user?.role === "MANAGER";
-  const canRead = user?.role === "MANAGER" || user?.role === "REVIEWER" || user?.role === "VIEWER";
+  const canRead = user?.role === "MANAGER";
 
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [filters, setFilters] = useState<IndicatorFilters>({ search: "", group: "", hmis_section: "" });

@@ -14,7 +14,10 @@ services:
     rootDir: backend
     buildCommand: "pip install -r requirements.txt"
     startCommand: "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-    healthCheckPath: /api/health
+    # /api/ready returns 503 when Postgres is unavailable, so Render marks the
+    # service unhealthy and stops sending traffic instead of routing to a backend
+    # that cannot serve real requests.
+    healthCheckPath: /api/ready
     envVars:
       # Pin Python to the version we test against locally. Render's auto-detection
       # has been observed to pick newer Python (3.14) which exposes a different

@@ -90,6 +90,15 @@ def test_assessor_can_open_assigned_workspace(
         str(seeded_assessor.id),
     )
 
+    # Manager pre-syncs DHIS2 values before fieldwork. With manager-only DHIS2,
+    # the assessor only sees values populated by this pre-sync — opening the
+    # workspace itself never triggers a DHIS2 call.
+    pre_sync_response = client.post(
+        f"/api/my-assessments/{assessment_facility_id}/pull-dhis2",
+        headers={"Authorization": f"Bearer {manager_token}"},
+    )
+    assert pre_sync_response.status_code == 200
+
     response = client.get(
         f"/api/my-assessments/{assessment_facility_id}/workspace",
         headers={"Authorization": f"Bearer {assessor_token}"},
@@ -381,7 +390,7 @@ def test_dhis2_service_uses_exact_month_range_and_sums_values(monkeypatch) -> No
     assert response["idXOxt69W0e"]["status"] == "SUCCESS"
 
 
-def test_dhis2_failure_does_not_prevent_workspace_loading(
+def test_assessor_workspace_does_not_auto_pull_dhis2(
     client,
     manager_token,
     assessor_token,
@@ -390,19 +399,13 @@ def test_dhis2_failure_does_not_prevent_workspace_loading(
     seeded_assessor,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(
-        assessment_workspace_service,
-        "fetch_dhis2_values",
-        lambda **_: {
-            active_indicator.dhis2_uid_or_operand: {
-                "identifier": active_indicator.dhis2_uid_or_operand,
-                "value": None,
-                "status": "ERROR",
-                "error_message": "DHIS2 timeout",
-                "extracted_at": __import__("datetime").datetime.now(__import__("datetime").UTC),
-            }
-        },
-    )
+    pull_count = {"value": 0}
+
+    def fake_fetch(**_kwargs):
+        pull_count["value"] += 1
+        return {}
+
+    monkeypatch.setattr(assessment_workspace_service, "fetch_dhis2_values", fake_fetch)
     assessment_facility_id = _create_published_assignment(
         client,
         manager_token,
@@ -417,14 +420,64 @@ def test_dhis2_failure_does_not_prevent_workspace_loading(
     )
 
     assert response.status_code == 200
-    assert response.json()["dhis2_pull_message"] is not None
-    assert len(response.json()["selected_indicators"]) == 1
+    body = response.json()
+    # Pre-sync is the manager's job; opening the assessor workspace must not call DHIS2.
+    assert pull_count["value"] == 0
+    assert body["dhis2_pull_message"] is None
+    assert len(body["selected_indicators"]) == 1
 
 
-def test_assessor_can_retry_dhis2_pull(
+def test_assessor_cannot_retry_dhis2_pull(
     client,
     manager_token,
     assessor_token,
+    active_facility,
+    active_indicator,
+    seeded_assessor,
+) -> None:
+    assessment_facility_id = _create_published_assignment(
+        client,
+        manager_token,
+        str(active_facility.id),
+        str(active_indicator.id),
+        str(seeded_assessor.id),
+    )
+
+    response = client.post(
+        f"/api/my-assessments/{assessment_facility_id}/pull-dhis2",
+        headers={"Authorization": f"Bearer {assessor_token}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_assessor_cannot_sync_with_dhis2(
+    client,
+    manager_token,
+    assessor_token,
+    active_facility,
+    active_indicator,
+    seeded_assessor,
+) -> None:
+    assessment_facility_id = _create_published_assignment(
+        client,
+        manager_token,
+        str(active_facility.id),
+        str(active_indicator.id),
+        str(seeded_assessor.id),
+    )
+
+    response = client.post(
+        f"/api/my-assessments/{assessment_facility_id}/sync-with-dhis2",
+        headers={"Authorization": f"Bearer {assessor_token}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_manager_can_pull_dhis2_for_assessment(
+    client,
+    manager_token,
     active_facility,
     active_indicator,
     seeded_assessor,
@@ -453,7 +506,7 @@ def test_assessor_can_retry_dhis2_pull(
 
     response = client.post(
         f"/api/my-assessments/{assessment_facility_id}/pull-dhis2",
-        headers={"Authorization": f"Bearer {assessor_token}"},
+        headers={"Authorization": f"Bearer {manager_token}"},
     )
 
     assert response.status_code == 200

@@ -16,6 +16,41 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+function describeLoginError(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "Unable to sign in. Please try again.";
+  }
+  const axiosLike = error as {
+    code?: string;
+    message?: string;
+    response?: { status?: number; data?: { detail?: unknown } };
+  };
+  if (axiosLike.response) {
+    const status = axiosLike.response.status;
+    if (status === 401) {
+      return "Email or password is incorrect. Try again or contact your manager.";
+    }
+    if (status === 403) {
+      return "This account is inactive. Contact your manager to reactivate it.";
+    }
+    if (typeof status === "number" && status >= 500) {
+      return "The backend is having trouble right now. Try again in a moment.";
+    }
+    const detail = axiosLike.response.data?.detail;
+    if (typeof detail === "string" && detail.length > 0) {
+      return detail;
+    }
+    return "Unable to sign in. Please try again.";
+  }
+  if (axiosLike.code === "ECONNABORTED" || /timeout/i.test(axiosLike.message ?? "")) {
+    return "The backend did not respond in time. The server may be waking up — try again in 30 seconds.";
+  }
+  if (axiosLike.code === "ERR_NETWORK" || /Network Error/i.test(axiosLike.message ?? "")) {
+    return "Cannot reach the backend. Check your internet connection or the API URL configuration (VITE_API_BASE_URL).";
+  }
+  return "Unable to sign in. Please try again.";
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const { login, user, loading } = useAuth();
@@ -49,8 +84,8 @@ export function LoginPage() {
     try {
       await login(result.data);
       navigate("/dashboard", { replace: true });
-    } catch {
-      setServerError("Unable to sign in. Check your email and password, then try again.");
+    } catch (error) {
+      setServerError(describeLoginError(error));
     } finally {
       setSubmitting(false);
     }
@@ -95,11 +130,9 @@ export function LoginPage() {
             <Button className="w-full" type="submit" disabled={submitting}>
               {submitting ? "Signing in..." : "Continue to platform"}
             </Button>
-            <div className="rounded-2xl bg-brand-surface p-4 text-sm text-brand-muted">
-              <p className="font-semibold text-brand-text">Default local manager</p>
-              <p className="mt-1">Email: admin@ucmb-dqa.local</p>
-              <p>Password: ChangeMe123!</p>
-            </div>
+            <p className="rounded-2xl bg-brand-surface p-4 text-xs text-brand-muted">
+              Local development defaults may differ from deployed accounts. Use the manager account created for this environment.
+            </p>
           </form>
         </Card>
       </div>

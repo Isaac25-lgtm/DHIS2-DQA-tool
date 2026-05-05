@@ -134,7 +134,6 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const [creatingAssessor, setCreatingAssessor] = useState(false);
   const [deletingAssessorId, setDeletingAssessorId] = useState<string | null>(null);
   const [sharedLoginPasswords, setSharedLoginPasswords] = useState<Record<string, string>>({});
-  const [sharedLoginPasswordsReady, setSharedLoginPasswordsReady] = useState(false);
 
   const [indicatorSearch, setIndicatorSearch] = useState("");
   const [dhis2IndicatorResults, setDhis2IndicatorResults] = useState<Dhis2DataElementSearchResult[]>([]);
@@ -158,7 +157,6 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const canPublishDraft = isManager && round?.status === "DRAFT";
   const canEditTeams =
     isManager && Boolean(round) && round?.status !== "CLOSED" && round?.status !== "ARCHIVED";
-  const sharedLoginPasswordStorageKey = round?.id ? `assessment-round-shared-login-passwords:${round.id}` : null;
 
   const loadSupportData = async () => {
     const [indicators, facilities, users] = await Promise.all([
@@ -261,52 +259,6 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
 
     void load();
   }, [roundId]);
-
-  useEffect(() => {
-    if (!sharedLoginPasswordStorageKey) {
-      setSharedLoginPasswords({});
-      setSharedLoginPasswordsReady(false);
-      return;
-    }
-
-    try {
-      const storedPasswords = window.sessionStorage.getItem(sharedLoginPasswordStorageKey);
-      if (!storedPasswords) {
-        setSharedLoginPasswords({});
-      } else {
-        const parsedPasswords = JSON.parse(storedPasswords) as Record<string, string>;
-        setSharedLoginPasswords(
-          Object.fromEntries(
-            Object.entries(parsedPasswords).filter(
-              ([userId, password]) => typeof userId === "string" && typeof password === "string",
-            ),
-          ),
-        );
-      }
-    } catch {
-      setSharedLoginPasswords({});
-    } finally {
-      setSharedLoginPasswordsReady(true);
-    }
-  }, [sharedLoginPasswordStorageKey]);
-
-  useEffect(() => {
-    if (!sharedLoginPasswordStorageKey || !sharedLoginPasswordsReady) {
-      return;
-    }
-
-    const activeAssessorIds = new Set(managedSharedLoginIds);
-    const visiblePasswords = Object.fromEntries(
-      Object.entries(sharedLoginPasswords).filter(([userId, password]) => activeAssessorIds.has(userId) && password.trim().length > 0),
-    );
-
-    if (Object.keys(visiblePasswords).length === 0) {
-      window.sessionStorage.removeItem(sharedLoginPasswordStorageKey);
-      return;
-    }
-
-    window.sessionStorage.setItem(sharedLoginPasswordStorageKey, JSON.stringify(visiblePasswords));
-  }, [managedSharedLoginIds, sharedLoginPasswordStorageKey, sharedLoginPasswords, sharedLoginPasswordsReady]);
 
   useEffect(() => {
     const query = indicatorSearch.trim();
@@ -1342,7 +1294,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                       Current login email: <span className="font-semibold">{assessorForm.email}</span>
                     </p>
                     <p className="mt-1 text-sm text-brand-text">
-                      Current password in this review session: <span className="font-semibold">{sharedLoginPasswords[editingAssessorId] ?? "Not available in this session. Enter a new password below to replace it."}</span>
+                      Current password in this page session: <span className="font-semibold">{sharedLoginPasswords[editingAssessorId] ?? "Not retrievable. Enter a new password below to replace it."}</span>
                     </p>
                   </div>
                 ) : null}
@@ -1373,14 +1325,15 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                       Shared password {editingAssessorId ? "(leave blank to keep current password)" : ""}
                     </label>
                     <Input
-                      type="text"
+                      type="password"
                       value={assessorForm.password ?? ""}
                       onChange={(event) => setAssessorForm({ ...assessorForm, password: event.target.value })}
+                      autoComplete="new-password"
                       placeholder="Minimum 8 characters"
                       disabled={!canEditTeams}
                     />
                     <p className="mt-2 text-xs text-brand-muted">
-                      This password stays visible to the manager during setup and review for this browser session.
+                      Passwords are not stored in browser storage. Keep a secure copy before leaving this page if the team needs it.
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -1418,7 +1371,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                           <p className="font-semibold">{assessor.full_name}</p>
                           <p className="text-xs text-brand-muted">{assessor.email}</p>
                           <p className="mt-1 text-xs text-brand-text">
-                            Password: {sharedLoginPasswords[assessor.id] ?? "Not available in this session"}
+                            Password: {sharedLoginPasswords[assessor.id] ?? "Not retrievable after page refresh"}
                           </p>
                           <p className="mt-1 text-xs text-brand-muted">
                             Assigned to {sharedLoginUsageCounts[assessor.id] ?? 0} {sharedLoginUsageCounts[assessor.id] === 1 ? "facility" : "facilities"}
@@ -1637,7 +1590,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                         <p className="font-semibold">{assessor.full_name}</p>
                         <p className="mt-1 text-brand-muted">Login email: {assessor.email}</p>
                         <p className="mt-1 text-brand-muted">
-                          Password: {sharedLoginPasswords[assessor.id] ?? "Not available in this session"}
+                          Password: {sharedLoginPasswords[assessor.id] ?? "Not retrievable after page refresh"}
                         </p>
                         <p className="mt-1 text-brand-muted">
                           Assigned facilities: {sharedLoginUsageCounts[assessor.id] ?? 0}

@@ -3,15 +3,24 @@ import type { UserRole } from "../types";
 const TOKEN_STORAGE_KEY = "ucmb_dqa_access_token";
 
 export function getAccessToken(): string | null {
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  const token = window.sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  if (token) {
+    return token;
+  }
+
+  // Clean up tokens saved by older builds without continuing to use them.
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  return null;
 }
 
 export function setAccessToken(token: string) {
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
 }
 
 export function clearAccessToken() {
   window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {

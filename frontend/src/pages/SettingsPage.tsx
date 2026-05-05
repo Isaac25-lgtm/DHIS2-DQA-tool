@@ -1,25 +1,21 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Database, HardDriveDownload, KeyRound, Link2, Moon, ShieldCheck, Sun } from "lucide-react";
+import { ChevronDown, ChevronUp, KeyRound, ShieldCheck } from "lucide-react";
 import { Card } from "../components/ui/Card";
 import { useAuth } from "../hooks/useAuth";
-import { useTheme } from "../hooks/useTheme";
-import {
-  getFailedSyncCount,
-  getPendingSyncCount,
-  listCachedAssessments,
-  listPendingSyncItems,
-} from "../services/offlineStore";
 import { systemService } from "../services/systemService";
 import { dhis2Service } from "../services/dhis2Service";
 import type { Dhis2ConnectionStatus, SystemInfo } from "../types";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 
+const DHIS2_MANAGER_ONLY_COPY =
+  "Only managers can sign in to DHIS2. Assessors use the DHIS2 values pre-synced by the manager before fieldwork.";
+
 function readApiError(error: unknown, fallback: string) {
   if (error && typeof error === "object" && "response" in error) {
     const response = (error as { response?: { status?: number; data?: { detail?: string } } }).response;
     if (response?.status === 403) {
-      return "Only manager or assessor accounts can sign in to DHIS2. Sign out and log back in with an assessment account.";
+      return "Only managers can sign in to DHIS2. Sign in as a manager account to manage DHIS2.";
     }
     if (response?.status === 401) {
       return "Your UCMB session has expired. Please sign in again before connecting DHIS2.";
@@ -31,47 +27,42 @@ function readApiError(error: unknown, fallback: string) {
   return fallback;
 }
 
+function statusTone(status: Dhis2ConnectionStatus | null): "success" | "warning" | "danger" | "neutral" {
+  if (!status) return "neutral";
+  if (status.signed_in) return "success";
+  if (status.connected) return "warning";
+  return "danger";
+}
+
+function statusLabel(status: Dhis2ConnectionStatus | null): string {
+  if (!status) return "Not checked";
+  if (status.signed_in) return "Signed in";
+  if (status.connected) return "Reachable, not signed in";
+  return "Unreachable";
+}
+
 export function SettingsPage() {
   const { user } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const isManager = user?.role === "MANAGER";
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
-  const [failedSyncCount, setFailedSyncCount] = useState(0);
-  const [cachedAssessments, setCachedAssessments] = useState(0);
-  const [draftCount, setDraftCount] = useState(0);
   const [dhis2Status, setDhis2Status] = useState<Dhis2ConnectionStatus | null>(null);
   const [checkingDhis2, setCheckingDhis2] = useState(false);
   const [dhis2Login, setDhis2Login] = useState({ base_url: "", username: "", password: "" });
   const [dhis2Error, setDhis2Error] = useState<string | null>(null);
   const [dhis2SigningIn, setDhis2SigningIn] = useState(false);
   const [dhis2SigningOut, setDhis2SigningOut] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [showSafetyDetails, setShowSafetyDetails] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
-      setLoading(true);
-      try {
-        const [info, pendingCount, failedCount, cachedItems, drafts] = await Promise.all([
-          systemService.getSystemInfo().catch(() => null),
-          getPendingSyncCount().catch(() => 0),
-          getFailedSyncCount().catch(() => 0),
-          listCachedAssessments().catch(() => []),
-          listPendingSyncItems().catch(() => []),
-        ]);
-        setSystemInfo(info);
-        setDhis2Login((current) => ({
-          ...current,
-          base_url: current.base_url || info?.dhis2_base_url || "https://hmis.health.go.ug/api",
-        }));
-        setPendingSyncCount(pendingCount);
-        setFailedSyncCount(failedCount);
-        setCachedAssessments(cachedItems.length);
-        setDraftCount(drafts.length);
-      } finally {
-        setLoading(false);
-      }
+      const info = await systemService.getSystemInfo().catch(() => null);
+      setSystemInfo(info);
+      setDhis2Login((current) => ({
+        ...current,
+        base_url: current.base_url || info?.dhis2_base_url || "https://hmis.health.go.ug/api",
+      }));
     };
-
     void loadSettings();
   }, []);
 
@@ -93,8 +84,8 @@ export function SettingsPage() {
 
   const signInToDhis2 = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (user?.role !== "MANAGER" && user?.role !== "ASSESSOR") {
-      setDhis2Error("Only manager or assessor accounts can sign in to DHIS2 for backend sync.");
+    if (!isManager) {
+      setDhis2Error("Only managers can sign in to DHIS2.");
       return;
     }
     setDhis2SigningIn(true);
@@ -133,234 +124,134 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <Card
-        title="Platform Settings"
-        subtitle="Environment visibility, DHIS2 sign-in, connectivity references, and offline storage status."
-      >
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl bg-brand-surface px-5 py-5">
-            <div className="flex items-center gap-3 text-brand-teal">
-              <Database size={18} />
-              <p className="text-sm font-semibold text-brand-text">Database</p>
-            </div>
-            <p className="mt-3 text-3xl font-bold text-brand-navy">
-              {loading ? "--" : systemInfo?.database_status?.toUpperCase() ?? "UNKNOWN"}
-            </p>
-            <p className="mt-2 text-sm text-brand-muted">Health endpoint exposes database availability only, not credentials.</p>
-          </div>
+      <Card title="DHIS2 sign-in" subtitle={DHIS2_MANAGER_ONLY_COPY}>
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge tone={statusTone(dhis2Status)}>{statusLabel(dhis2Status)}</Badge>
+          <Button className="px-3 py-2 text-xs" variant="secondary" onClick={() => void testDhis2Connection()} disabled={checkingDhis2}>
+            {checkingDhis2 ? "Testing..." : "Test connection"}
+          </Button>
+          {dhis2Status?.signed_in && isManager ? (
+            <Button className="px-3 py-2 text-xs" variant="ghost" onClick={() => void signOutFromDhis2()} disabled={dhis2SigningOut}>
+              {dhis2SigningOut ? "Signing out..." : "Sign out DHIS2"}
+            </Button>
+          ) : null}
+          {dhis2Status?.last_checked_at ? (
+            <span className="text-xs text-brand-muted">Last checked: {new Date(dhis2Status.last_checked_at).toLocaleString()}</span>
+          ) : null}
+        </div>
 
-          <div className="rounded-2xl bg-brand-surface px-5 py-5">
-            <div className="flex items-center gap-3 text-brand-teal">
-              <HardDriveDownload size={18} />
-              <p className="text-sm font-semibold text-brand-text">Offline storage</p>
-            </div>
-            <p className="mt-3 text-3xl font-bold text-brand-navy">{loading ? "--" : cachedAssessments}</p>
-            <p className="mt-2 text-sm text-brand-muted">Cached assessment packages currently stored in this browser.</p>
-          </div>
+        {dhis2Status?.message ? <p className="mt-3 text-sm text-brand-muted">{dhis2Status.message}</p> : null}
+        {dhis2Error ? (
+          <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-brand-danger">
+            {dhis2Error}
+          </p>
+        ) : null}
 
-          <div className="rounded-2xl bg-brand-surface px-5 py-5">
+        {isManager ? (
+          <form className="mt-5 space-y-4" onSubmit={(event) => void signInToDhis2(event)}>
+            <label className="block">
+              <span className="text-sm font-semibold text-brand-text">DHIS2 base URL</span>
+              <input
+                className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                value={dhis2Login.base_url}
+                onChange={(event) => setDhis2Login((current) => ({ ...current, base_url: event.target.value }))}
+                placeholder="https://hmis.health.go.ug/api"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-brand-text">DHIS2 username</span>
+              <input
+                className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                value={dhis2Login.username}
+                onChange={(event) => setDhis2Login((current) => ({ ...current, username: event.target.value }))}
+                autoComplete="username"
+                placeholder="Your DHIS2 username"
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-brand-text">DHIS2 password</span>
+              <input
+                type="password"
+                className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                value={dhis2Login.password}
+                onChange={(event) => setDhis2Login((current) => ({ ...current, password: event.target.value }))}
+                autoComplete="current-password"
+                placeholder="Your DHIS2 password"
+                required
+              />
+            </label>
+            <Button type="submit" disabled={dhis2SigningIn || !dhis2Login.username || !dhis2Login.password}>
+              {dhis2SigningIn ? "Signing in..." : "Sign in to DHIS2"}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setShowSafetyDetails((value) => !value)}
+              className="flex items-center gap-2 text-xs font-semibold text-brand-teal"
+            >
+              <KeyRound size={14} />
+              Why is my password safe?
+              {showSafetyDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showSafetyDetails ? (
+              <p className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-3 text-xs text-brand-muted">
+                The password is sent once to the FastAPI backend over your signed-in UCMB session. The backend keeps an active DHIS2
+                session in server memory for API calls and clears the password from this form after sign-in. The password is never
+                stored in the browser and never returned in any frontend API response.
+              </p>
+            ) : null}
+          </form>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-brand-border bg-brand-surface px-4 py-4">
             <div className="flex items-center gap-3 text-brand-teal">
               <ShieldCheck size={18} />
-              <p className="text-sm font-semibold text-brand-text">Pending sync</p>
+              <p className="text-sm font-semibold text-brand-text">Manager access required</p>
             </div>
-            <p className="mt-3 text-3xl font-bold text-brand-navy">{loading ? "--" : pendingSyncCount}</p>
-            <p className="mt-2 text-sm text-brand-muted">
-              {failedSyncCount > 0
-                ? `${failedSyncCount} draft${failedSyncCount === 1 ? "" : "s"} currently need retry or relogin.`
-                : "No sync failures are currently flagged on this device."}
-            </p>
+            <p className="mt-2 text-sm text-brand-muted">{DHIS2_MANAGER_ONLY_COPY}</p>
           </div>
-
-          <div className="rounded-2xl bg-brand-surface px-5 py-5">
-            <div className="flex items-center gap-3 text-brand-teal">
-              {theme === "day" ? <Sun size={18} /> : <Moon size={18} />}
-              <p className="text-sm font-semibold text-brand-text">Display mode</p>
-            </div>
-            <p className="mt-3 text-3xl font-bold text-brand-navy">{theme === "day" ? "DAY" : "NIGHT"}</p>
-            <p className="mt-2 text-sm text-brand-muted">Switch modes from the top bar or choose one below.</p>
-          </div>
-
-        </div>
+        )}
       </Card>
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <Card title="Theme" subtitle="Choose the display mode that feels best for your workspace.">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              className={`rounded-2xl border px-4 py-4 text-left transition ${
-                theme === "day"
-                  ? "border-brand-teal bg-cyan-50 shadow-soft"
-                  : "border-brand-border bg-white"
-              }`}
-              onClick={() => setTheme("day")}
-            >
-              <div className="flex items-center gap-3 text-brand-teal">
-                <Sun size={18} />
-                <p className="text-sm font-semibold text-brand-text">Day mode</p>
-              </div>
-              <p className="mt-3 text-sm text-brand-muted">Bright panels and the default daytime workspace styling.</p>
-            </button>
-            <button
-              type="button"
-              className={`rounded-2xl border px-4 py-4 text-left transition ${
-                theme === "night"
-                  ? "border-brand-teal bg-cyan-50 shadow-soft"
-                  : "border-brand-border bg-white"
-              }`}
-              onClick={() => setTheme("night")}
-            >
-              <div className="flex items-center gap-3 text-brand-teal">
-                <Moon size={18} />
-                <p className="text-sm font-semibold text-brand-text">Night mode</p>
-              </div>
-              <p className="mt-3 text-sm text-brand-muted">Lower-glare surfaces for darker rooms and extended review sessions.</p>
-            </button>
-          </div>
-        </Card>
+      <Card
+        title="Advanced system info"
+        subtitle="Read-only configuration details. Click to expand."
+      >
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((value) => !value)}
+          className="flex items-center gap-2 text-sm font-semibold text-brand-teal"
+        >
+          {advancedOpen ? "Hide details" : "Show details"}
+          {advancedOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
 
-        <Card title="Runtime information" subtitle="Visible configuration that is safe to surface to signed-in users.">
-          <dl className="space-y-4">
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <dt className="text-xs uppercase tracking-[0.18em] text-brand-muted">Application</dt>
-              <dd className="mt-2 text-sm font-semibold text-brand-text">
-                {loading ? "Loading..." : `${systemInfo?.app_name ?? "UCMB HMIS 105 DQA"}${systemInfo?.app_version ? ` · ${systemInfo.app_version}` : ""}`}
+        {advancedOpen ? (
+          <dl className="mt-4 space-y-3 text-sm">
+            <div className="flex justify-between gap-4 rounded-2xl border border-brand-border bg-white px-4 py-3">
+              <dt className="text-brand-muted">Application</dt>
+              <dd className="text-right font-semibold text-brand-text">
+                {systemInfo
+                  ? `${systemInfo.app_name}${systemInfo.app_version ? ` · ${systemInfo.app_version}` : ""}`
+                  : "Loading..."}
               </dd>
             </div>
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <dt className="text-xs uppercase tracking-[0.18em] text-brand-muted">Environment</dt>
-              <dd className="mt-2 text-sm font-semibold text-brand-text">{loading ? "Loading..." : systemInfo?.environment ?? "Unknown"}</dd>
+            <div className="flex justify-between gap-4 rounded-2xl border border-brand-border bg-white px-4 py-3">
+              <dt className="text-brand-muted">Environment</dt>
+              <dd className="font-semibold text-brand-text">{systemInfo?.environment ?? "Loading..."}</dd>
             </div>
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <dt className="text-xs uppercase tracking-[0.18em] text-brand-muted">DHIS2 base URL</dt>
-              <dd className="mt-2 flex items-center gap-2 text-sm font-semibold text-brand-text">
-                <Link2 size={14} className="text-brand-teal" />
-                {loading ? "Loading..." : systemInfo?.dhis2_base_url ?? "Not configured"}
-              </dd>
+            <div className="flex justify-between gap-4 rounded-2xl border border-brand-border bg-white px-4 py-3">
+              <dt className="text-brand-muted">Database</dt>
+              <dd className="font-semibold text-brand-text">{systemInfo?.database_status?.toUpperCase() ?? "Loading..."}</dd>
             </div>
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <dt className="text-xs uppercase tracking-[0.18em] text-brand-muted">DHIS2 connection</dt>
-              <dd className="mt-3 flex flex-wrap items-center gap-3">
-                <Badge tone={dhis2Status?.connected ? "success" : dhis2Status ? "danger" : "neutral"}>
-                  {dhis2Status ? (dhis2Status.signed_in ? "Signed in" : dhis2Status.connected ? "Connected" : "Not signed in") : "Not checked"}
-                </Badge>
-                <Button className="px-3 py-2 text-xs" variant="secondary" onClick={() => void testDhis2Connection()} disabled={checkingDhis2}>
-                  {checkingDhis2 ? "Testing..." : "Test DHIS2 Connection"}
-                </Button>
-                {dhis2Status?.signed_in ? (
-                  <Button className="px-3 py-2 text-xs" variant="ghost" onClick={() => void signOutFromDhis2()} disabled={dhis2SigningOut}>
-                    {dhis2SigningOut ? "Signing out..." : "Sign out DHIS2"}
-                  </Button>
-                ) : null}
-              </dd>
-              <p className="mt-2 text-sm text-brand-muted">
-                {dhis2Status?.message ?? "Managers or assessors can sign in to DHIS2 here before live search, import, and assessment auto-pull can run."}
-              </p>
-              {dhis2Error ? (
-                <p className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-brand-danger">
-                  {dhis2Error}
-                </p>
-              ) : null}
-              {dhis2Status?.last_checked_at ? (
-                <p className="mt-1 text-xs text-brand-muted">Last checked: {new Date(dhis2Status.last_checked_at).toLocaleString()}</p>
-              ) : null}
-            </div>
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <dt className="text-xs uppercase tracking-[0.18em] text-brand-muted">Offline drafts on this device</dt>
-              <dd className="mt-2 text-sm font-semibold text-brand-text">
-                {loading ? "Loading..." : `${draftCount} draft${draftCount === 1 ? "" : "s"}`}
+            <div className="flex justify-between gap-4 rounded-2xl border border-brand-border bg-white px-4 py-3">
+              <dt className="text-brand-muted">DHIS2 base URL</dt>
+              <dd className="break-all text-right font-semibold text-brand-text">
+                {systemInfo?.dhis2_base_url ?? "Loading..."}
               </dd>
             </div>
           </dl>
-        </Card>
-
-        <Card title="DHIS2 sign-in" subtitle="Managers and assessment teams can use a DHIS2 account with permission to read analytics values.">
-          {user?.role === "MANAGER" || user?.role === "ASSESSOR" ? (
-            <form className="space-y-4" onSubmit={(event) => void signInToDhis2(event)}>
-              <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-                <div className="flex items-center gap-3 text-brand-teal">
-                  <KeyRound size={18} />
-                  <p className="text-sm font-semibold text-brand-text">DHIS2 credentials are not stored in the browser</p>
-                </div>
-                <p className="mt-2 text-sm text-brand-muted">
-                  The password is sent once to the FastAPI backend over your signed-in UCMB session. The backend keeps an active DHIS2 session in server memory for API calls, clears the password from this form after sign-in, and can auto-fill DHIS2 values when an assessor opens an assigned workspace.
-                </p>
-              </div>
-              {dhis2Error ? (
-                <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-brand-danger">
-                  {dhis2Error}
-                </p>
-              ) : null}
-              <label className="block">
-                <span className="text-sm font-semibold text-brand-text">DHIS2 base URL</span>
-                <input
-                  className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-                  value={dhis2Login.base_url}
-                  onChange={(event) => setDhis2Login((current) => ({ ...current, base_url: event.target.value }))}
-                  placeholder="https://hmis.health.go.ug/api"
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-brand-text">DHIS2 username</span>
-                <input
-                  className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-                  value={dhis2Login.username}
-                  onChange={(event) => setDhis2Login((current) => ({ ...current, username: event.target.value }))}
-                  autoComplete="username"
-                  placeholder="Your DHIS2 username"
-                  required
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm font-semibold text-brand-text">DHIS2 password</span>
-                <input
-                  type="password"
-                  className="mt-2 w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-                  value={dhis2Login.password}
-                  onChange={(event) => setDhis2Login((current) => ({ ...current, password: event.target.value }))}
-                  autoComplete="current-password"
-                  placeholder="Your DHIS2 password"
-                  required
-                />
-              </label>
-              <Button type="submit" disabled={dhis2SigningIn || !dhis2Login.username || !dhis2Login.password}>
-                {dhis2SigningIn ? "Signing in..." : "Sign in to DHIS2"}
-              </Button>
-            </form>
-          ) : (
-            <div className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-4">
-              <div className="flex items-center gap-3 text-brand-teal">
-                <KeyRound size={18} />
-                <p className="text-sm font-semibold text-brand-text">Manager or assessor access required</p>
-              </div>
-              <p className="mt-2 text-sm text-brand-muted">
-                DHIS2 sign-in is available to manager and assessor accounts. Reviewer and viewer accounts cannot connect DHIS2 credentials.
-              </p>
-            </div>
-          )}
-        </Card>
-
-        <Card title="Configuration boundaries" subtitle="Sensitive credentials stay outside frontend API responses and browser storage.">
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <p className="text-sm font-semibold text-brand-text">What stays server-side</p>
-              <p className="mt-2 text-sm text-brand-muted">
-                DHIS2 password, AI API key, JWT secret key, and full database connection details are never exposed in frontend API responses.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-brand-border bg-white px-4 py-4">
-              <p className="text-sm font-semibold text-brand-text">Manager and assessor DHIS2 sync</p>
-              <p className="mt-2 text-sm text-brand-muted">
-                {user?.role === "MANAGER"
-                  ? "Managers can sign in for setup, pre-sync, import, and review workflows."
-                  : user?.role === "ASSESSOR"
-                    ? "Assessors can sign in so their assigned workspace pulls DHIS2 values before data entry and submission."
-                    : "Editable environment configuration remains manager-only and DHIS2 sign-in remains limited to manager and assessor accounts."}
-              </p>
-            </div>
-          </div>
-        </Card>
-      </section>
+        ) : null}
+      </Card>
     </div>
   );
 }
