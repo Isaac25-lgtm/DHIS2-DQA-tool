@@ -6,8 +6,7 @@ This platform is intentionally lightweight.
 
 Recommended production shape:
 
-- one FastAPI backend service
-- one static React frontend
+- one FastAPI web service that serves both API and the compiled React frontend
 - one PostgreSQL database
 - HTTPS termination
 - environment variables stored server-side
@@ -56,7 +55,7 @@ DHIS2_BASE_URL=https://hmis.health.go.ug/api
 AI_API_KEY=
 AI_PROVIDER=
 AI_MODEL=
-CORS_ORIGINS=https://your-frontend.example.org
+CORS_ORIGINS=[]
 DEFAULT_MANAGER_NAME=System Manager
 DEFAULT_MANAGER_EMAIL=admin@example.org
 DEFAULT_MANAGER_PASSWORD=change-me
@@ -84,9 +83,9 @@ Recommended production command:
 gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-## Frontend Deployment
+## Frontend Build
 
-### 1. Install and build
+The single Render service builds the frontend before starting FastAPI:
 
 ```bash
 cd frontend
@@ -94,20 +93,7 @@ npm install
 npm run build
 ```
 
-### 2. Serve the static build
-
-You can serve the built output from:
-
-- Nginx
-- Render static site
-- Railway static hosting
-- an institutional static hosting layer
-
-If needed, set:
-
-```env
-VITE_API_BASE_URL=https://your-backend.example.org/api
-```
+FastAPI serves `frontend/dist` from `/` in production. API calls use the same-origin `/api` base path, so a separate static service and CORS bridge are not needed on Render.
 
 ## PostgreSQL Setup
 
@@ -167,20 +153,18 @@ The active DHIS2 session is cleared on DHIS2 sign-out or backend restart. Do not
 
 ## Render Example
 
-This repo includes `render.yaml` for a lightweight Render Blueprint:
+This repo includes `render.yaml` for a lightweight single-service Render Blueprint:
 
-- `ucmb-dqa-backend`: Python web service from `backend/`
-- `ucmb-dqa-frontend`: static React site from `frontend/`
-- external Neon PostgreSQL, provided through the backend `DATABASE_URL`
+- `ucmb-dqa-platform`: Python web service that builds the frontend, runs migrations, starts FastAPI, and serves both `/` and `/api`
+- external Neon PostgreSQL, provided through `DATABASE_URL`
 
 Render setup notes:
 
 - connect the GitHub repository to Render
-- create services from the Blueprint
-- set `DATABASE_URL` on the backend service to the Neon pooled connection string, including `?sslmode=require`
-- set `SECRET_KEY` on the backend service
-- set `CORS_ORIGINS` on the backend service to the deployed frontend URL
-- set `VITE_API_BASE_URL` on the frontend static service to `https://<backend-service>.onrender.com/api`
+- create the service from the Blueprint
+- set `DATABASE_URL` to the Neon pooled connection string, including `?sslmode=require`
+- set `SECRET_KEY`
+- keep `VITE_API_BASE_URL=/api` for same-origin API calls
 - keep `SEED_DEFAULT_MANAGER=false` after initial setup; if you temporarily enable it, use a strong `DEFAULT_MANAGER_PASSWORD`
 - Render checks backend readiness at `/api/ready`, which returns 503 if Postgres is unavailable
 - the backend start command runs `alembic upgrade head` before starting Uvicorn

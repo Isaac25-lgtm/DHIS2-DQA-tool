@@ -47,7 +47,7 @@ This codebase supports PostgreSQL only. SQLite is not used or assumed anywhere i
 
 ## Deploy to Render with Neon Postgres
 
-The repository ships with a `render.yaml` Blueprint that provisions one Python web service (FastAPI backend) and one static site (React frontend). The database is **external Neon Postgres** — Render does not host the data itself, it only runs the application processes and connects to Neon via a connection string env var.
+The repository ships with a `render.yaml` Blueprint that provisions one Python web service. That single Render service builds the React frontend, runs FastAPI, serves the compiled frontend from `/`, and serves the backend API from `/api`. The database is **external Neon Postgres**; Render runs the application process and connects to Neon via a connection string env var.
 
 ### 1. Create the Neon database
 
@@ -79,29 +79,27 @@ Push the `main` branch (or whichever branch you want Render to deploy from). Mak
 
 1. In the [Render dashboard](https://dashboard.render.com), click **New +** → **Blueprint**.
 2. Connect the GitHub account that owns the `DHIS2-DQA-tool` repository.
-3. Pick the repository. Render auto-detects `render.yaml` and lists the two services it will create:
-   - `ucmb-dqa-backend` (Python web service)
-   - `ucmb-dqa-frontend` (Static site)
+3. Pick the repository. Render auto-detects `render.yaml` and lists one service:
+   - `ucmb-dqa-platform` (Python web service serving both frontend and API)
 4. Render prompts you for the env vars marked `sync: false` (they are intentionally **not** stored in `render.yaml`). Fill them in:
 
    | Variable | Where it goes | Value |
    |---|---|---|
    | `DATABASE_URL` | backend | The Neon connection string from Step 1 (full URL, including `?sslmode=require`) |
    | `SECRET_KEY` | backend | A long random string. Generate with `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
-   | `CORS_ORIGINS` | backend | JSON array containing your Render frontend URL, e.g. `["https://ucmb-dqa-frontend.onrender.com"]` |
    | `DEFAULT_MANAGER_PASSWORD` | backend | Required only if you temporarily set `SEED_DEFAULT_MANAGER=true`. Use a strong password, not `ChangeMe123!` |
    | `AI_API_KEY` | backend | Your DeepSeek (or other provider) API key. Optional — leave blank to use deterministic template fallback reporting |
    | `AI_PROVIDER` | backend | e.g. `deepseek` |
    | `AI_MODEL` | backend | e.g. `deepseek-v4-pro` |
-   | `VITE_API_BASE_URL` | frontend | `https://ucmb-dqa-backend.onrender.com/api` (replace with the actual backend URL Render gives you) |
+   | `VITE_API_BASE_URL` | app | Already set to `/api` in `render.yaml` for same-origin deployment |
 
-5. Click **Apply**. Render builds both services. The backend's start command runs `alembic upgrade head` first, so the schema is created in Neon on the first boot.
+5. Click **Apply**. Render builds the frontend, installs the backend, runs `alembic upgrade head`, then starts Uvicorn. The schema is created in Neon on the first boot.
 
 ### 4. Seed the default manager (one-time)
 
 `render.yaml` ships with `SEED_DEFAULT_MANAGER=false` for safety. To create the first manager account:
 
-1. After the first successful deploy, open the backend service in the Render dashboard.
+1. After the first successful deploy, open the `ucmb-dqa-platform` service in the Render dashboard.
 2. Either set `SEED_DEFAULT_MANAGER=true` plus `DEFAULT_MANAGER_EMAIL` and a strong `DEFAULT_MANAGER_PASSWORD` env var and trigger a redeploy (the lifespan creates the manager on next boot if the email does not yet exist), or
 3. Use the Render shell tab and run a one-off Python script that inserts a manager user via `app.services.user_service`.
 
@@ -109,9 +107,9 @@ Either way, turn `SEED_DEFAULT_MANAGER=false` again after the first manager exis
 
 ### 5. Verify the deployment
 
-- Backend readiness: `https://ucmb-dqa-backend.onrender.com/api/ready` returns `{"status":"ready"}` only when Postgres is reachable. Render points its health check here.
-- Backend status: `https://ucmb-dqa-backend.onrender.com/api/health` returns process status and database availability for inspection.
-- Frontend: open the static-site URL Render assigned to `ucmb-dqa-frontend`. The login page should render.
+- App readiness: `https://ucmb-dqa-platform.onrender.com/api/ready` returns `{"status":"ready"}` only when Postgres and the core schema are reachable. Render points its health check here.
+- App status: `https://ucmb-dqa-platform.onrender.com/api/health` returns process status and database availability for inspection.
+- Frontend: open the service URL Render assigned to `ucmb-dqa-platform`. The login page should render from the same origin as the API.
 - Sign in as the default manager.
 - Open Settings - DHIS2 sign-in as a manager to enable live DHIS2 search, import, and pre-sync.
 
@@ -273,7 +271,7 @@ DEFAULT_MANAGER_PASSWORD=ChangeMe123!
 SEED_DEFAULT_MANAGER=true
 ```
 
-`CORS_ORIGINS` is parsed as either a JSON array (recommended) or a comma-separated list. In production set it to the deployed frontend origin only, e.g. `["https://ucmb-dqa-frontend.onrender.com"]`.
+`CORS_ORIGINS` is parsed as either a JSON array (recommended) or a comma-separated list. The Render Blueprint uses same-origin `/api` calls, so it sets `CORS_ORIGINS=[]`; only add origins if you later host a separate frontend domain.
 
 ## Default Manager Seed
 
@@ -548,17 +546,15 @@ The backend calls DeepSeek's chat-completions API server-side only. The API key 
 
 This repo includes `render.yaml` for a Render Blueprint with:
 
-- one Python backend service (`ucmb-dqa-backend`)
-- one static React frontend service (`ucmb-dqa-frontend`)
+- one Python web service (`ucmb-dqa-platform`) that serves both the React frontend and FastAPI API
 - **external Neon Postgres** as the database (provided via the `DATABASE_URL` env var, not provisioned by Render)
 
 Before first Render deploy, set the env vars marked `sync: false` in `render.yaml`:
 
-- backend `DATABASE_URL` → your full Neon connection string (with `?sslmode=require`)
-- backend `SECRET_KEY` → a strong random string
-- backend `CORS_ORIGINS` → JSON array containing the deployed frontend URL
-- backend `AI_API_KEY`, `AI_PROVIDER`, `AI_MODEL` (optional, for AI report drafting)
-- frontend `VITE_API_BASE_URL` → the deployed backend `/api` URL
+- `DATABASE_URL`: your full Neon connection string (with `?sslmode=require`)
+- `SECRET_KEY`: a strong random string
+- `AI_API_KEY`, `AI_PROVIDER`, `AI_MODEL`: optional, for AI report drafting
+- `SEED_DEFAULT_MANAGER`, `DEFAULT_MANAGER_EMAIL`, `DEFAULT_MANAGER_PASSWORD`: only for the first manager seed
 
 The full step-by-step lives in [Deploy to Render with Neon Postgres](#deploy-to-render-with-neon-postgres).
 

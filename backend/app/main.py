@@ -1,9 +1,13 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
 
 import app.models  # noqa: F401
 from app.config import Settings, get_settings
@@ -14,6 +18,7 @@ from app.seed.user_seed import seed_default_manager_if_enabled
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+FRONTEND_DIST_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
 _INSECURE_SECRET_KEYS = {"", "change-this-secret"}
@@ -65,6 +70,16 @@ def validate_production_config(config: Settings) -> None:
 validate_production_config(settings)
 
 
+class SinglePageApplicationFiles(StaticFiles):
+    async def get_response(self, path: str, scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
@@ -97,9 +112,12 @@ async def database_exception_handler(_: Request, exc: SQLAlchemyError) -> JSONRe
     )
 
 
-@app.get("/", tags=["root"])
-def read_root() -> dict[str, str]:
-    return {
-        "app": settings.app_name,
-        "message": "UCMB HMIS 105 DQA Platform backend is running.",
-    }
+if FRONTEND_DIST_DIR.exists():
+    app.mount("/", SinglePageApplicationFiles(directory=FRONTEND_DIST_DIR, html=True), name="frontend")
+else:
+    @app.get("/", tags=["root"])
+    def read_root() -> dict[str, str]:
+        return {
+            "app": settings.app_name,
+            "message": "UCMB HMIS 105 DQA Platform backend is running.",
+        }
