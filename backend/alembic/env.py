@@ -40,9 +40,12 @@ _VERSION_TABLE_WIDEN_SQL = (
 
 def _ensure_version_table_width(connection) -> None:
     connection.execute(text(_VERSION_TABLE_SQL))
+    connection.commit()
     try:
         connection.execute(text(_VERSION_TABLE_WIDEN_SQL))
+        connection.commit()
     except Exception:
+        connection.rollback()
         # Some Postgres flavours / permissions may reject the ALTER even when the
         # column is already the right width. Ignore — the CREATE above already
         # guarantees a wide enough column for fresh databases.
@@ -82,4 +85,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
