@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+import re
 from typing import Any
 
 import httpx
@@ -22,6 +23,7 @@ DHIS2_NOT_CONFIGURED = "NOT_CONFIGURED"
 HMIS_105_DATASET_HINT = "HMIS 105"
 
 _DHIS2_ACTIVE_SESSION: dict[str, str] = {}
+_SEARCH_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 
 
 def is_dhis2_configured() -> bool:
@@ -277,6 +279,29 @@ def _extract_hmis_code(item: dict[str, Any]) -> str | None:
     return item.get("code")
 
 
+def _build_data_element_search_filters(query: str) -> list[str]:
+    cleaned = query.strip()
+    compact = re.sub(r"\s+", "", cleaned)
+    candidates = [cleaned, compact, cleaned.upper(), compact.upper()]
+    candidates.extend(_SEARCH_TOKEN_PATTERN.findall(cleaned))
+
+    filters: list[str] = []
+    for candidate in dict.fromkeys(value for value in candidates if len(value) >= 2):
+        filters.extend(
+            [
+                f"identifiable:token:{candidate}",
+                f"code:ilike:{candidate}",
+                f"name:ilike:{candidate}",
+                f"shortName:ilike:{candidate}",
+            ]
+        )
+        if "-" not in candidate and len(candidate) <= 12:
+            filters.append(f"code:ilike:105-{candidate}")
+        if 8 <= len(candidate) <= 16 and " " not in candidate:
+            filters.append(f"id:eq:{candidate}")
+    return list(dict.fromkeys(filters))
+
+
 def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElementSearchResult]:
     if not is_dhis2_configured():
         return []
@@ -285,19 +310,7 @@ def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElement
         return []
 
     endpoint = f"{_base_url()}/dataElements.json"
-    filters = [
-        f"identifiable:token:{cleaned}",
-        f"code:ilike:{cleaned}",
-        f"name:ilike:{cleaned}",
-        f"shortName:ilike:{cleaned}",
-    ]
-    normalized_code = cleaned.upper().replace(" ", "")
-    if normalized_code != cleaned:
-        filters.append(f"code:ilike:{normalized_code}")
-    if "-" not in normalized_code and len(normalized_code) <= 12:
-        filters.append(f"code:ilike:105-{normalized_code}")
-    if 8 <= len(cleaned) <= 16 and " " not in cleaned:
-        filters.append(f"id:eq:{cleaned}")
+    filters = _build_data_element_search_filters(cleaned)
 
     fields = "id,name,shortName,code,valueType,aggregationType,categoryCombo[id,name],dataSetElements[dataSet[id,name]]"
     items_by_id: dict[str, dict[str, Any]] = {}
