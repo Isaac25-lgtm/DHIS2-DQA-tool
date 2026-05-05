@@ -285,16 +285,38 @@ def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElement
         return []
 
     endpoint = f"{_base_url()}/dataElements.json"
-    params = {
-        "filter": f"identifiable:token:{cleaned}",
-        "fields": "id,name,shortName,code,valueType,aggregationType,categoryCombo[id,name],dataSetElements[dataSet[id,name]]",
-        "pageSize": 20,
-    }
+    filters = [
+        f"identifiable:token:{cleaned}",
+        f"code:ilike:{cleaned}",
+        f"name:ilike:{cleaned}",
+        f"shortName:ilike:{cleaned}",
+    ]
+    normalized_code = cleaned.upper().replace(" ", "")
+    if normalized_code != cleaned:
+        filters.append(f"code:ilike:{normalized_code}")
+    if "-" not in normalized_code and len(normalized_code) <= 12:
+        filters.append(f"code:ilike:105-{normalized_code}")
+    if 8 <= len(cleaned) <= 16 and " " not in cleaned:
+        filters.append(f"id:eq:{cleaned}")
+
+    fields = "id,name,shortName,code,valueType,aggregationType,categoryCombo[id,name],dataSetElements[dataSet[id,name]]"
+    items_by_id: dict[str, dict[str, Any]] = {}
     try:
         with _client() as client:
-            response = client.get(endpoint, params=params)
-            response.raise_for_status()
-        payload = response.json()
+            for filter_value in dict.fromkeys(filters):
+                response = client.get(
+                    endpoint,
+                    params={
+                        "filter": filter_value,
+                        "fields": fields,
+                        "pageSize": 20,
+                    },
+                )
+                response.raise_for_status()
+                payload = response.json()
+                for item in payload.get("dataElements", []):
+                    if isinstance(item, dict) and item.get("id"):
+                        items_by_id[str(item["id"])] = item
     except (httpx.HTTPError, ValueError):
         return []
 
@@ -304,7 +326,7 @@ def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElement
         )
     )
     results: list[Dhis2DataElementSearchResult] = []
-    for item in payload.get("dataElements", []):
+    for item in items_by_id.values():
         if not isinstance(item, dict) or not item.get("id") or not item.get("name"):
             continue
         datasets = [
