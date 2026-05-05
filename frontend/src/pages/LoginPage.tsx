@@ -27,8 +27,8 @@ export function LoginPage() {
     formState: { errors },
   } = useForm<LoginFormValues>({
     defaultValues: {
-      email: "admin@ucmb-dqa.local",
-      password: "ChangeMe123!",
+      email: "",
+      password: "",
     },
   });
 
