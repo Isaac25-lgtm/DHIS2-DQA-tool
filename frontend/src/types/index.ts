@@ -287,6 +287,7 @@ export interface AssessmentRoundListItem {
 }
 
 export interface AssessmentRoundPayload {
+  template_round_id?: string | null;
   name: string;
   description: string | null;
   reporting_period: string;

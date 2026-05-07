@@ -165,12 +165,45 @@ def _build_source_documents(
     ]
 
 
+def _copy_source_documents_from_round(source_round: AssessmentRound) -> list[SourceDocumentRequirementCreate]:
+    return [
+        SourceDocumentRequirementCreate(
+            name=item.name,
+            description=item.description,
+            is_required=item.is_required,
+            display_order=item.display_order,
+        )
+        for item in source_round.source_document_requirements
+    ]
+
+
+def _copy_indicators_from_round(target_round: AssessmentRound, source_round: AssessmentRound) -> None:
+    target_round.selected_indicators = [
+        AssessmentRoundIndicator(
+            indicator_id=item.indicator_id,
+            display_order=item.display_order,
+            is_required=item.is_required,
+            custom_threshold_percent=item.custom_threshold_percent,
+            notes=item.notes,
+        )
+        for item in source_round.selected_indicators
+    ]
+
+
 def create_assessment_round(db: Session, payload: AssessmentRoundCreate, created_by_user_id: uuid.UUID) -> AssessmentRound:
     reporting_period = payload.reporting_period.strip()
+    source_round = get_round_by_id(db, payload.template_round_id) if payload.template_round_id else None
+    if payload.template_round_id and not source_round:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template assessment round not found.")
+
+    source_documents = payload.source_document_requirements
+    if source_documents is None and source_round:
+        source_documents = _copy_source_documents_from_round(source_round)
+
     assessment_round = AssessmentRound(
         assessment_code=_next_assessment_code(db, reporting_period),
         name=payload.name.strip(),
-        description=payload.description,
+        description=payload.description if payload.description is not None else source_round.description if source_round else None,
         reporting_period=reporting_period,
         period_type=payload.period_type,
         start_date=payload.start_date,
@@ -179,9 +212,11 @@ def create_assessment_round(db: Session, payload: AssessmentRoundCreate, created
         status=AssessmentRoundStatus.DRAFT,
         created_by_user_id=created_by_user_id,
         notes=payload.notes,
-        scoring_settings_json=payload.scoring_settings_json or DEFAULT_SCORING_SETTINGS,
+        scoring_settings_json=payload.scoring_settings_json or (source_round.scoring_settings_json if source_round else None) or DEFAULT_SCORING_SETTINGS,
     )
-    assessment_round.source_document_requirements = _build_source_documents(payload.source_document_requirements)
+    assessment_round.source_document_requirements = _build_source_documents(source_documents)
+    if source_round:
+        _copy_indicators_from_round(assessment_round, source_round)
     db.add(assessment_round)
     db.flush()
     db.refresh(assessment_round)

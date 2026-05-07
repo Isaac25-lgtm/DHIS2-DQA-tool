@@ -45,6 +45,25 @@ export function AssessmentRoundsPage() {
     void loadRounds();
   }, [loadRounds]);
 
+  const assessmentSections = useMemo(() => {
+    const grouped = rounds.reduce<Map<string, AssessmentRoundListItem[]>>((accumulator, round) => {
+      const key = round.name.trim() || "Unnamed assessment";
+      const items = accumulator.get(key) ?? [];
+      items.push(round);
+      accumulator.set(key, items);
+      return accumulator;
+    }, new Map());
+
+    return Array.from(grouped.entries())
+      .map(([name, items]) => ({
+        name,
+        rounds: items.sort((left, right) => right.created_at.localeCompare(left.created_at)),
+        facilityCount: items.reduce((total, item) => total + item.facility_count, 0),
+        assignedFacilityCount: items.reduce((total, item) => total + item.assigned_facility_count, 0),
+      }))
+      .sort((left, right) => right.rounds[0].created_at.localeCompare(left.rounds[0].created_at));
+  }, [rounds]);
+
   const deleteRound = useCallback(async (round: AssessmentRoundListItem) => {
     const confirmed = window.confirm(
       `Delete "${round.name}" and all of its assessment assignments? This cannot be undone.`,
@@ -195,7 +214,54 @@ export function AssessmentRoundsPage() {
           )}
         </Card>
       ) : (
-        <Table data={rounds} columns={columns} />
+        <>
+          <Card
+            title="Assessment activity sections"
+            subtitle="Each section groups batches that share the same assessment activity. Open a batch to add teams, change facilities, sync DHIS2, or generate reports for that specific assessment."
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
+              {assessmentSections.map((section) => {
+                const latestRound = section.rounds[0];
+                return (
+                  <div key={section.name} className="rounded-2xl border border-brand-border bg-brand-surface p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-brand-text">{section.name}</p>
+                        <p className="mt-1 text-xs text-brand-muted">
+                          {section.rounds.length} assessment batch{section.rounds.length === 1 ? "" : "es"} · {section.facilityCount} facilities · {section.assignedFacilityCount} assigned
+                        </p>
+                      </div>
+                      <Badge tone={statusTone[latestRound.status]}>{latestRound.status}</Badge>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Link className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-teal shadow-sm" to={`/assessment-rounds/${latestRound.id}`}>
+                        Open latest batch
+                      </Link>
+                      <Link
+                        className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-navy shadow-sm"
+                        to={`/assessment-rounds/new?template=${latestRound.id}`}
+                      >
+                        Add another team/facility batch
+                      </Link>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {section.rounds.slice(0, 3).map((round) => (
+                        <Link
+                          key={round.id}
+                          className="block rounded-xl border border-white bg-white px-3 py-2 text-xs text-brand-muted"
+                          to={`/assessment-rounds/${round.id}`}
+                        >
+                          <span className="font-semibold text-brand-text">{round.assessment_code}</span> - {round.reporting_period} - {round.facility_count} facilities
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+          <Table data={rounds} columns={columns} />
+        </>
       )}
     </div>
   );

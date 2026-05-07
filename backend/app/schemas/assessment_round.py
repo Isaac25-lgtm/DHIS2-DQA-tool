@@ -72,7 +72,7 @@ class AssessmentRoundBase(BaseModel):
 
 
 class AssessmentRoundCreate(AssessmentRoundBase):
-    pass
+    template_round_id: UUID | None = None
 
 
 class AssessmentRoundUpdate(AssessmentRoundBase):

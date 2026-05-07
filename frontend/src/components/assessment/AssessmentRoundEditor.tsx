@@ -17,6 +17,7 @@ import { indicatorService } from "../../services/indicatorService";
 import { userService } from "../../services/userService";
 import type {
   AssessmentRound,
+  AssessmentRoundListItem,
   AssessmentRoundPayload,
   Dhis2DataElementSearchResult,
   Dhis2FacilitySearchResult,
@@ -110,9 +111,10 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 interface AssessmentRoundEditorProps {
   roundId?: string;
+  initialTemplateRoundId?: string;
 }
 
-export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
+export function AssessmentRoundEditor({ roundId, initialTemplateRoundId }: AssessmentRoundEditorProps) {
   const { user } = useAuth();
   const isManager = user?.role === "MANAGER";
 
@@ -122,6 +124,8 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const [syncingDhis2, setSyncingDhis2] = useState(false);
   const [round, setRound] = useState<AssessmentRound | null>(null);
   const [form, setForm] = useState<AssessmentRoundPayload>(emptyForm);
+  const [templateRoundId, setTemplateRoundId] = useState(initialTemplateRoundId ?? "");
+  const [assessmentActivityOptions, setAssessmentActivityOptions] = useState<AssessmentRoundListItem[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -151,6 +155,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
   const [teamAssignments, setTeamAssignments] = useState<Record<string, { leadId: string; memberIds: string[] }>>({});
   const [allowUnassignedPublish, setAllowUnassignedPublish] = useState(false);
   const assignmentSectionRef = useRef<HTMLDivElement | null>(null);
+  const initialTemplateAppliedRef = useRef(false);
   const [autoSavingFacilityId, setAutoSavingFacilityId] = useState<string | null>(null);
 
   const canEditDraft = isManager && (!round || !["CLOSED", "ARCHIVED"].includes(round.status));
@@ -159,14 +164,16 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     isManager && Boolean(round) && round?.status !== "CLOSED" && round?.status !== "ARCHIVED";
 
   const loadSupportData = async () => {
-    const [indicators, facilities, users] = await Promise.all([
+    const [indicators, facilities, users, rounds] = await Promise.all([
       indicatorService.listIndicators({ active: true }),
       facilityService.listFacilities({ active: true }),
       userService.listUsers().catch(() => []),
+      assessmentRoundService.listRounds().catch(() => []),
     ]);
     setAvailableIndicators(indicators.filter((item) => Boolean(item.dhis2_uid_or_operand?.trim())));
     setAvailableFacilities(facilities.filter((item) => Boolean(item.dhis2_org_unit_uid?.trim())));
     setAllAssessors(users.filter((item) => item.role === "ASSESSOR" && item.is_active));
+    setAssessmentActivityOptions(rounds.filter((item) => item.status !== "ARCHIVED"));
   };
 
   const mergeManagedSharedLoginIds = (nextIds: string[]) => {
@@ -242,6 +249,44 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     hydrateFromRound(data);
   };
 
+  const attachToExistingAssessment = async (sourceRoundId: string) => {
+    setTemplateRoundId(sourceRoundId);
+    setFormError(null);
+    setMessage(null);
+    if (!sourceRoundId) {
+      return;
+    }
+    try {
+      const sourceRound = await assessmentRoundService.getRound(sourceRoundId);
+      setForm((current) => ({
+        ...current,
+        name: sourceRound.name,
+        description: sourceRound.description,
+        notes: current.notes || sourceRound.notes,
+        source_document_requirements: sourceRound.source_document_requirements.map((item) => ({
+          name: item.name,
+          description: item.description,
+          is_required: item.is_required,
+          display_order: item.display_order,
+        })),
+      }));
+      setSelectedIndicators(
+        sourceRound.selected_indicators.map((item) => ({
+          indicator_id: item.indicator_id,
+          display_order: item.display_order,
+          is_required: item.is_required,
+          custom_threshold_percent: item.custom_threshold_percent,
+          notes: item.notes,
+        })),
+      );
+      setMessage(
+        `Attached to ${sourceRound.assessment_code}. Indicators and checklist copied; select new facilities and group logins for this batch.`,
+      );
+    } catch {
+      setFormError("Unable to attach to that existing assessment. Please select another assessment or create a new activity.");
+    }
+  };
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -249,6 +294,9 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
         await loadSupportData();
         if (roundId) {
           await loadRound(roundId);
+        } else if (initialTemplateRoundId && !initialTemplateAppliedRef.current) {
+          initialTemplateAppliedRef.current = true;
+          await attachToExistingAssessment(initialTemplateRoundId);
         }
       } catch {
         setFormError("Unable to load the assessment round builder right now.");
@@ -258,7 +306,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
     };
 
     void load();
-  }, [roundId]);
+  }, [initialTemplateRoundId, roundId]);
 
   useEffect(() => {
     const query = indicatorSearch.trim();
@@ -707,6 +755,7 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
         ...normalizedForm,
         description: normalizedForm.description || null,
         notes: normalizedForm.notes || null,
+        template_round_id: !round && templateRoundId ? templateRoundId : null,
       };
 
       const nextRound = round
@@ -892,6 +941,24 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
       {activeStep === 0 ? (
         <Card title="Step 1: Basic details" subtitle="Create the draft round and choose the exact DHIS2 month range to pull.">
           <div className="grid gap-4 md:grid-cols-2">
+            {!round ? (
+              <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4 md:col-span-2">
+                <label className="mb-2 block text-sm font-semibold text-brand-text">
+                  Attach to existing assessment activity
+                </label>
+                <Select value={templateRoundId} onChange={(event) => void attachToExistingAssessment(event.target.value)}>
+                  <option value="">Create a new assessment activity</option>
+                  {assessmentActivityOptions.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} - {item.assessment_code} - {item.reporting_period} - {item.status}
+                    </option>
+                  ))}
+                </Select>
+                <p className="mt-2 text-xs text-brand-muted">
+                  Use this when the activity is the same but another team is covering different facilities. The app copies indicators and checklist items only; facilities, shared group logins, submissions, and reports remain separate for this new assessment.
+                </p>
+              </div>
+            ) : null}
             <div>
               <label className="mb-2 block text-sm font-semibold text-brand-text">Assessment name</label>
               <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />

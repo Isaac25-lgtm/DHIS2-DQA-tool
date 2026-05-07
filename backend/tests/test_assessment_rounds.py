@@ -188,6 +188,52 @@ def test_manager_can_select_indicators(client, manager_token, active_indicator) 
     assert response.json()[0]["indicator_id"] == str(active_indicator.id)
 
 
+def test_manager_can_create_round_from_existing_assessment_activity(client, manager_token, active_indicator) -> None:
+    source_round = _create_round(client, manager_token)
+    indicator_response = client.put(
+        f"/api/assessment-rounds/{source_round['id']}/indicators",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={
+            "indicators": [
+                {
+                    "indicator_id": str(active_indicator.id),
+                    "display_order": 1,
+                    "is_required": True,
+                    "custom_threshold_percent": 7,
+                    "notes": "Copied indicator setup",
+                }
+            ]
+        },
+    )
+    assert indicator_response.status_code == 200
+
+    response = client.post(
+        "/api/assessment-rounds",
+        headers={"Authorization": f"Bearer {manager_token}"},
+        json={
+            "template_round_id": source_round["id"],
+            "name": source_round["name"],
+            "description": None,
+            "reporting_period": "2026-04",
+            "period_type": "MONTHLY",
+            "start_date": "2026-04-01",
+            "end_date": "2026-04-30",
+            "deadline": "2026-05-10",
+            "notes": "Second team batch under same activity",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["name"] == source_round["name"]
+    assert payload["reporting_period"] == "2026-04"
+    assert payload["facility_count"] == 0
+    assert len(payload["selected_indicators"]) == 1
+    assert payload["selected_indicators"][0]["indicator_id"] == str(active_indicator.id)
+    assert payload["selected_indicators"][0]["custom_threshold_percent"] == 7.0
+    assert len(payload["source_document_requirements"]) == len(source_round["source_document_requirements"])
+
+
 def test_round_rejects_unmapped_indicator_selection(client, db_session, manager_token) -> None:
     indicator = Indicator(
         indicator_name="Unmapped manual indicator",
