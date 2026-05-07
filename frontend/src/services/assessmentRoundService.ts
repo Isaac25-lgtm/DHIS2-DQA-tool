@@ -11,6 +11,8 @@ import type {
   SelectedIndicatorPayload,
 } from "../types";
 
+const DHIS2_ROUND_SYNC_TIMEOUT_MS = 300000;
+
 export const assessmentRoundService = {
   async listRounds() {
     const response = await api.get<AssessmentRoundListItem[]>("/assessment-rounds");
@@ -83,6 +85,8 @@ export const assessmentRoundService = {
   async syncDhis2Values(roundId: string) {
     const response = await api.post<{ status: string; synced_facilities: number; failed_facilities: number }>(
       `/assessment-rounds/${roundId}/sync-dhis2-values`,
+      undefined,
+      { timeout: DHIS2_ROUND_SYNC_TIMEOUT_MS },
     );
     return response.data;
   },

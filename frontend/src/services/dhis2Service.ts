@@ -6,6 +6,8 @@ interface Dhis2PullResponse {
   message: string | null;
 }
 
+const DHIS2_ROUND_SYNC_TIMEOUT_MS = 300000;
+
 export const dhis2Service = {
   async getConnectionStatus() {
     const response = await api.get<Dhis2ConnectionStatus>("/dhis2/connection-status");
@@ -54,6 +56,8 @@ export const dhis2Service = {
   async syncRoundValues(roundId: string) {
     const response = await api.post<{ status: string; synced_facilities: number; failed_facilities: number }>(
       `/assessment-rounds/${roundId}/sync-dhis2-values`,
+      undefined,
+      { timeout: DHIS2_ROUND_SYNC_TIMEOUT_MS },
     );
     return response.data;
   },
