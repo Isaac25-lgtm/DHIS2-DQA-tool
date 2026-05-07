@@ -2,10 +2,11 @@ import axios from "axios";
 import { clearAccessToken, getAccessToken } from "../lib/auth";
 
 const defaultApiBaseUrl = import.meta.env.DEV ? "http://localhost:8000/api" : "/api";
+const DEFAULT_API_TIMEOUT_MS = 60000;
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl,
-  timeout: 10000,
+  timeout: DEFAULT_API_TIMEOUT_MS,
 });
 
 api.interceptors.request.use((config) => {
