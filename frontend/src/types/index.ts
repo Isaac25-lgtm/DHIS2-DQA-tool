@@ -728,6 +728,7 @@ export interface Report {
 export interface ReportGeneratePayload {
   assessment_round_id?: string | null;
   assessment_facility_id?: string | null;
+  team_lead_user_id?: string | null;
   report_type: ReportType;
   include_comments: boolean;
 }

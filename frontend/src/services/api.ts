@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getAccessToken } from "../lib/auth";
+import { clearAccessToken, getAccessToken } from "../lib/auth";
 
 const defaultApiBaseUrl = import.meta.env.DEV ? "http://localhost:8000/api" : "/api";
 
@@ -16,3 +16,16 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      clearAccessToken();
+      if (window.location.pathname !== "/login") {
+        window.location.assign("/login");
+      }
+    }
+    return Promise.reject(error);
+  },
+);

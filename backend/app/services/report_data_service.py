@@ -12,7 +12,7 @@ from app.models.assessment_facility_team_member import AssessmentFacilityTeamMem
 from app.models.assessment_round import AssessmentRound
 from app.models.assessment_round_indicator import AssessmentRoundIndicator
 from app.models.dqa_value import DqaValue
-from app.models.base import ReportType, UserRole
+from app.models.base import AssessmentFacilityStatus, AssessmentTeamRole, ReportType, SeverityLevel, UserRole
 from app.models.corrective_action import CorrectiveAction
 from app.models.user import User
 from app.schemas.reports import ReportGenerateRequest
@@ -25,6 +25,7 @@ from app.services.analytics_service import (
 )
 from app.services.comparison_service import get_comparison_results_for_assessment_facility
 from app.services.corrective_action_service import serialize_corrective_action
+from app.services.scoring_service import calculate_facility_score
 
 
 def _assessment_facility_query():
@@ -62,6 +63,32 @@ def _round_query():
             selectinload(AssessmentRound.source_document_requirements),
         )
     )
+
+
+SUBMITTED_REPORT_STATUSES = {
+    AssessmentFacilityStatus.SUBMITTED,
+    AssessmentFacilityStatus.UNDER_REVIEW,
+    AssessmentFacilityStatus.APPROVED,
+    AssessmentFacilityStatus.CLOSED,
+}
+
+
+def _team_lead_member(assessment_facility: AssessmentFacility) -> AssessmentFacilityTeamMember | None:
+    active_members = [item for item in assessment_facility.team_members if item.is_active]
+    return next((item for item in active_members if item.team_role == AssessmentTeamRole.TEAM_LEAD), None)
+
+
+def _filter_facilities_by_team_lead(
+    facilities: list[AssessmentFacility],
+    team_lead_user_id: UUID | None,
+) -> list[AssessmentFacility]:
+    if not team_lead_user_id:
+        return facilities
+    return [
+        facility
+        for facility in facilities
+        if (lead_member := _team_lead_member(facility)) is not None and lead_member.user_id == team_lead_user_id
+    ]
 
 
 def ensure_can_access_reporting_scope(current_user: User) -> None:
@@ -153,6 +180,24 @@ def _serialize_indicators(assessment_round: AssessmentRound) -> list[dict]:
         }
         for item in sorted(assessment_round.selected_indicators, key=lambda indicator: indicator.display_order)
     ]
+
+
+def _serialize_scope_indicators(facilities: list[AssessmentFacility]) -> list[dict]:
+    by_key: dict[tuple[str | None, str], dict] = {}
+    for facility in facilities:
+        for item in facility.assessment_round.selected_indicators:
+            key = (item.indicator.hmis_code, item.indicator.indicator_name)
+            by_key[key] = {
+                "hmis_code": item.indicator.hmis_code,
+                "indicator_name": item.indicator.indicator_name,
+                "dhis2_uid_or_operand": item.indicator.dhis2_uid_or_operand,
+                "dataset_name": item.indicator.dataset_name,
+                "hmis_section": item.indicator.hmis_section,
+                "source_register": item.indicator.source_register,
+                "indicator_group": item.indicator.indicator_group,
+                "is_death_indicator": item.indicator.is_death_indicator,
+            }
+    return sorted(by_key.values(), key=lambda indicator: ((indicator.get("hmis_code") or ""), indicator["indicator_name"].lower()))
 
 
 def _build_dhis2_sync_summary(values: list[DqaValue]) -> dict:
@@ -431,6 +476,290 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
     return _build_title(report_type, round_name=assessment_round.name), _sanitize_comments(structured_input, include_comments)
 
 
+def _facility_score(assessment_facility: AssessmentFacility) -> dict:
+    required_ids = {
+        item.indicator_id
+        for item in assessment_facility.assessment_round.selected_indicators
+        if item.is_required
+    }
+    return calculate_facility_score(
+        list(assessment_facility.dqa_values),
+        required_ids,
+        assessment_facility.assessment_round.scoring_settings_json,
+    )
+
+
+def _build_source_document_analytics(facilities: list[AssessmentFacility]) -> list[dict]:
+    grouped: dict[str, list] = {}
+    for facility in facilities:
+        for item in facility.source_document_checks:
+            grouped.setdefault(item.source_document_name, []).append(item)
+
+    analytics = []
+    for name, checks in sorted(grouped.items(), key=lambda entry: entry[0].lower()):
+        total = len(checks)
+        analytics.append(
+            {
+                "source_document_name": name,
+                "availability_rate": round(sum(1 for item in checks if item.available) / total * 100, 1) if total else 0,
+                "completeness_rate": round(sum(1 for item in checks if item.complete) / total * 100, 1) if total else 0,
+                "legibility_rate": round(sum(1 for item in checks if item.legible) / total * 100, 1) if total else 0,
+            }
+        )
+    return analytics
+
+
+def _submission_scope_report_data(
+    db: Session,
+    assessment_round_id: UUID | None,
+    team_lead_user_id: UUID | None,
+    include_comments: bool,
+    current_user: User,
+) -> tuple[str, dict]:
+    statement = _assessment_facility_query()
+    if assessment_round_id:
+        statement = statement.where(AssessmentFacility.assessment_round_id == assessment_round_id)
+    all_facilities = list(db.scalars(statement).unique())
+    scoped_facilities = _filter_facilities_by_team_lead(all_facilities, team_lead_user_id)
+    submitted_facilities = [facility for facility in scoped_facilities if facility.status in SUBMITTED_REPORT_STATUSES]
+    if not submitted_facilities:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No submitted assessments match the selected report scope.")
+
+    rounds_by_id = {facility.assessment_round.id: facility.assessment_round for facility in scoped_facilities}
+    rounds = sorted(rounds_by_id.values(), key=lambda item: item.created_at)
+    submitted_values = [value for facility in submitted_facilities for value in facility.dqa_values]
+    submitted_scores = [
+        {
+            "facility": facility,
+            "score": _facility_score(facility),
+        }
+        for facility in submitted_facilities
+    ]
+    average_score = round(
+        sum(float(item["score"]["score_percent"]) for item in submitted_scores) / len(submitted_scores),
+        2,
+    ) if submitted_scores else 0.0
+    exact = sum(1 for value in submitted_values if value.severity == SeverityLevel.EXACT)
+    major = sum(1 for value in submitted_values if value.severity in {SeverityLevel.MAJOR, SeverityLevel.CRITICAL})
+    critical = sum(1 for value in submitted_values if value.severity == SeverityLevel.CRITICAL)
+    missing = sum(1 for value in submitted_values if value.severity == SeverityLevel.MISSING)
+    total_values = len(submitted_values)
+
+    comparison_rows: list[dict] = []
+    source_document_checks: list[dict] = []
+    general_facility_comments: list[dict] = []
+    manager_comments: list[dict] = []
+    corrective_actions = _serialize_corrective_actions(
+        [action for facility in submitted_facilities for action in facility.corrective_actions]
+    )
+    teams = []
+    for facility in submitted_facilities:
+        lead_member = _team_lead_member(facility)
+        teams.append(
+            {
+                "assessment_round": facility.assessment_round.name,
+                "facility": facility.facility.facility_name,
+                "team_lead": lead_member.user.full_name if lead_member and lead_member.user else None,
+                "team_members": [
+                    member.user.full_name
+                    for member in facility.team_members
+                    if member.user and member.is_active and member.team_role == AssessmentTeamRole.TEAM_MEMBER
+                ],
+                "status": facility.status.value,
+                "submitted_at": facility.submitted_at.isoformat() if facility.submitted_at else None,
+            }
+        )
+
+        selected_by_indicator = {item.indicator_id: item for item in facility.assessment_round.selected_indicators}
+        try:
+            comparison_results = get_comparison_results_for_assessment_facility(db, facility.id, current_user).model_dump(mode="json")
+        except HTTPException:
+            comparison_results = {"comparison_rows": []}
+        for row in comparison_results.get("comparison_rows", []):
+            indicator_id = UUID(row["indicator_id"]) if row.get("indicator_id") else None
+            selected = selected_by_indicator.get(indicator_id) if indicator_id else None
+            register_value = row.get("register_value")
+            hmis105_value = row.get("hmis105_value")
+            dhis2_value = row.get("dhis2_value_at_assessment")
+            register_hmis_percent_diff = _percent_diff(register_value, hmis105_value)
+            hmis_dhis2_percent_diff = _percent_diff(hmis105_value, dhis2_value)
+            register_dhis2_percent_diff = _percent_diff(register_value, dhis2_value)
+            valid_diffs = [
+                value
+                for value in (register_hmis_percent_diff, hmis_dhis2_percent_diff, register_dhis2_percent_diff)
+                if value is not None
+            ]
+            comparison_rows.append(
+                {
+                    **row,
+                    "assessment_round": facility.assessment_round.name,
+                    "facility_name": facility.facility.facility_name,
+                    "district": facility.facility.district,
+                    "team_lead": lead_member.user.full_name if lead_member and lead_member.user else None,
+                    "source_register": selected.indicator.source_register if selected else None,
+                    "register_hmis_percent_diff": register_hmis_percent_diff,
+                    "hmis_dhis2_percent_diff": hmis_dhis2_percent_diff,
+                    "register_dhis2_percent_diff": register_dhis2_percent_diff,
+                    "max_percent_diff": max(valid_diffs) if valid_diffs else None,
+                }
+            )
+        for item in facility.source_document_checks:
+            source_document_checks.append(
+                {
+                    "assessment_round": facility.assessment_round.name,
+                    "facility_name": facility.facility.facility_name,
+                    **_serialize_source_document_checks([item])[0],
+                }
+            )
+        if include_comments and facility.general_assessment_comment:
+            general_facility_comments.append(
+                {
+                    "assessment_round": facility.assessment_round.name,
+                    "facility_name": facility.facility.facility_name,
+                    "comment": facility.general_assessment_comment,
+                }
+            )
+        if include_comments and facility.manager_comment:
+            manager_comments.append(
+                {
+                    "assessment_round": facility.assessment_round.name,
+                    "facility_name": facility.facility.facility_name,
+                    "comment": facility.manager_comment,
+                }
+            )
+
+    indicator_groups: dict[tuple[str | None, str], dict] = {}
+    for row in comparison_rows:
+        key = (row.get("hmis_code"), row.get("indicator_name") or "Indicator")
+        item = indicator_groups.setdefault(
+            key,
+            {
+                "hmis_code": row.get("hmis_code"),
+                "indicator_name": row.get("indicator_name") or "Indicator",
+                "total_rows": 0,
+                "exact_count": 0,
+                "major_discrepancy_count": 0,
+                "critical_discrepancy_count": 0,
+            },
+        )
+        item["total_rows"] += 1
+        if row.get("severity") == SeverityLevel.EXACT.value:
+            item["exact_count"] += 1
+        if row.get("severity") in {SeverityLevel.MAJOR.value, SeverityLevel.CRITICAL.value}:
+            item["major_discrepancy_count"] += 1
+        if row.get("severity") == SeverityLevel.CRITICAL.value:
+            item["critical_discrepancy_count"] += 1
+    indicator_findings = []
+    for item in indicator_groups.values():
+        total = item["total_rows"] or 1
+        indicator_findings.append(
+            {
+                **item,
+                "exact_match_rate": round(item["exact_count"] / total * 100, 1),
+            }
+        )
+    indicator_findings.sort(key=lambda item: (item["exact_match_rate"], -item["critical_discrepancy_count"], item["indicator_name"].lower()))
+
+    source_document_analytics = _build_source_document_analytics(submitted_facilities)
+    source_document_completeness_rate = (
+        round(sum(item["completeness_rate"] for item in source_document_analytics) / len(source_document_analytics), 1)
+        if source_document_analytics
+        else 0.0
+    )
+    scope_label = "All submitted assessments"
+    if assessment_round_id and rounds:
+        scope_label = rounds[0].name
+    if team_lead_user_id:
+        lead_name = next((team["team_lead"] for team in teams if team["team_lead"]), "Selected group account")
+        scope_label = f"{scope_label} - {lead_name}"
+
+    summary = {
+        "facilities_assessed": len(submitted_facilities),
+        "facilities_pending": max(len(scoped_facilities) - len(submitted_facilities), 0),
+        "exact_match_rate": round(exact / total_values * 100, 1) if total_values else 0.0,
+        "major_discrepancy_rate": round(major / total_values * 100, 1) if total_values else 0.0,
+        "critical_discrepancy_count": critical,
+        "source_document_completeness_rate": source_document_completeness_rate,
+        "register_to_hmis_error_count": sum(1 for value in submitted_values if value.issue_type and value.issue_type.value == "REGISTER_TO_HMIS_SUMMARIZATION_ERROR"),
+        "dhis2_entry_error_count": sum(1 for value in submitted_values if value.issue_type and value.issue_type.value == "DHIS2_DATA_ENTRY_ERROR"),
+        "multiple_stage_error_count": sum(1 for value in submitted_values if value.issue_type and value.issue_type.value == "MULTIPLE_STAGE_ERROR"),
+        "missing_value_count": missing,
+    }
+    facility_score_ranking = [
+        {
+            "assessment_round": item["facility"].assessment_round.name,
+            "facility_name": item["facility"].facility.facility_name,
+            "district": item["facility"].facility.district,
+            "team_lead": (_team_lead_member(item["facility"]).user.full_name if _team_lead_member(item["facility"]) and _team_lead_member(item["facility"]).user else None),
+            "dqa_score": item["score"]["score_percent"],
+            "score_category": item["score"]["score_category"],
+            "exact_count": item["score"]["exact_count"],
+            "minor_count": item["score"]["minor_count"],
+            "moderate_count": item["score"]["moderate_count"],
+            "major_count": item["score"]["major_count"],
+            "critical_count": item["score"]["critical_count"],
+            "missing_count": item["score"]["missing_count"],
+        }
+        for item in sorted(submitted_scores, key=lambda entry: float(entry["score"]["score_percent"]), reverse=True)
+    ]
+    structured_input = {
+        "report_scope": "submissions",
+        "assessment_round": {
+            "id": str(assessment_round_id) if assessment_round_id else None,
+            "name": scope_label,
+            "reporting_period": ", ".join(sorted({round_item.reporting_period for round_item in rounds})) or "Multiple periods",
+            "period_type": "MULTIPLE" if len(rounds) != 1 else rounds[0].period_type.value,
+            "deadline": None,
+        },
+        "organization": {
+            "name": "Uganda Catholic Medical Bureau",
+            "report_prepared_for": "UCMB leadership and assessment stakeholders",
+            "report_prepared_by": current_user.full_name,
+            "report_date": datetime.now(UTC).date().isoformat(),
+        },
+        "coverage": {
+            "total_facilities_selected": len(scoped_facilities),
+            "facilities_assessed": len(submitted_facilities),
+            "facilities_pending": max(len(scoped_facilities) - len(submitted_facilities), 0),
+            "percentage_completed": _completion_percent(len(submitted_facilities), len(scoped_facilities)),
+            "districts_covered": sorted({facility.facility.district for facility in submitted_facilities}),
+            "facility_types": sorted({facility.facility.facility_type for facility in submitted_facilities}),
+        },
+        "teams": teams,
+        "indicators_assessed": _serialize_scope_indicators(submitted_facilities),
+        "summary": summary,
+        "dqa_score": {
+            "score_percent": average_score,
+            "score_category": "AVERAGE",
+            "exact_count": exact,
+            "minor_count": sum(1 for value in submitted_values if value.severity == SeverityLevel.MINOR),
+            "moderate_count": sum(1 for value in submitted_values if value.severity == SeverityLevel.MODERATE),
+            "major_count": sum(1 for value in submitted_values if value.severity == SeverityLevel.MAJOR),
+            "critical_count": critical,
+            "missing_count": missing,
+        },
+        "facility_score_ranking": facility_score_ranking,
+        "indicator_findings": indicator_findings,
+        "source_document_completeness": source_document_analytics,
+        "source_document_checks": source_document_checks,
+        "comparison_rows": comparison_rows,
+        "general_facility_comments": general_facility_comments,
+        "manager_comments": manager_comments,
+        "corrective_actions": corrective_actions,
+        "dhis2_sync_summary": _build_dhis2_sync_summary(submitted_values),
+        "generated_timestamp": datetime.now(UTC).isoformat(),
+        "include_comments": include_comments,
+        "major_cross_facility_issues": indicator_findings[:5],
+        "discrepancy_type_distribution": {
+            "register_to_hmis_error_count": summary["register_to_hmis_error_count"],
+            "dhis2_entry_error_count": summary["dhis2_entry_error_count"],
+            "multiple_stage_error_count": summary["multiple_stage_error_count"],
+            "missing_value_count": summary["missing_value_count"],
+        },
+    }
+    return f"UCMB Consolidated DQA Report - {scope_label}", _sanitize_comments(structured_input, include_comments)
+
+
 def prepare_report_structured_input(
     db: Session,
     payload: ReportGenerateRequest,
@@ -440,5 +769,15 @@ def prepare_report_structured_input(
     if payload.report_type == ReportType.FACILITY_DQA_REPORT:
         assert payload.assessment_facility_id is not None
         return _facility_report_data(db, payload.assessment_facility_id, payload.include_comments, current_user)
+    if payload.report_type == ReportType.CONSOLIDATED_UCMB_DQA_REPORT and (
+        payload.team_lead_user_id or not payload.assessment_round_id
+    ):
+        return _submission_scope_report_data(
+            db,
+            payload.assessment_round_id,
+            payload.team_lead_user_id,
+            payload.include_comments,
+            current_user,
+        )
     assert payload.assessment_round_id is not None
     return _consolidated_report_data(db, payload.assessment_round_id, payload.include_comments, current_user, payload.report_type)

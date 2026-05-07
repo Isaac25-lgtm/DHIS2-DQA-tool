@@ -19,7 +19,7 @@ const pageTitles: Record<string, string> = {
   "/assessment-facilities": "Assessment Workspace Review",
   "/submissions": "Submissions",
   "/my-assessments": "My Assessments",
-  "/reports": "Report Archive",
+  "/reports": "Generated Report",
   "/analytics": "Analytics",
   "/assessment-results": "Assessment Results",
   "/facility-dqa": "Facility DQA Profile",

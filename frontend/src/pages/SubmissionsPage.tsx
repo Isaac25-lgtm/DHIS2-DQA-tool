@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, Eye, FileText, PlayCircle, RefreshCcw, Sparkles, X } from "lucide-react";
+import { Download, Eye, FileText, PlayCircle, RefreshCcw, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -14,7 +14,6 @@ import { reportService } from "../services/reportService";
 import { submissionService } from "../services/submissionService";
 import type {
   AssessmentRoundListItem,
-  ReportType,
   SubmissionDashboard,
   SubmissionDetail,
   SubmissionListItem,
@@ -75,8 +74,6 @@ export function SubmissionsPage() {
   const [cumulativeDetails, setCumulativeDetails] = useState<SubmissionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState<string | null>(null);
-  const [reportType, setReportType] = useState<ReportType>("CONSOLIDATED_UCMB_DQA_REPORT");
-  const [includeComments, setIncludeComments] = useState(true);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -96,22 +93,18 @@ export function SubmissionsPage() {
           .map((item) => submissionService.getSubmission(item.assessment_facility_id).catch(() => null)),
       );
       setCumulativeDetails(detailRows.filter((item): item is SubmissionDetail => Boolean(item)));
-      if (!roundId && roundList[0]?.id) {
-        setSelectedRoundId(roundList[0].id);
-      }
+      setMessage(null);
+    } catch {
+      setDashboard(null);
+      setCumulativeDetails([]);
+      setMessage("Unable to load submissions right now. If your session expired, please sign in again.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void load("");
-  }, []);
-
-  useEffect(() => {
-    if (selectedRoundId) {
-      void load(selectedRoundId, selectedTeamLeadId);
-    }
+    void load(selectedRoundId, selectedTeamLeadId);
   }, [selectedRoundId, selectedTeamLeadId]);
 
   const submissionColumns = useMemo<ColumnDef<SubmissionListItem>[]>(
@@ -277,22 +270,31 @@ export function SubmissionsPage() {
     })),
   );
   const selectedRound = rounds.find((round) => round.id === selectedRoundId) ?? null;
+  const selectedTeamLead = dashboard?.team_leads.find((lead) => lead.user_id === selectedTeamLeadId) ?? null;
   const facilityOptions = dashboard?.submissions ?? [];
-  const canGenerateRoundReport = Boolean(selectedRoundId);
+  const canGenerateReport = (dashboard?.submissions.length ?? 0) > 0;
+  const reportScopeLabel = selectedRound
+    ? selectedTeamLead
+      ? `${selectedRound.assessment_code} - ${selectedRound.name}; ${selectedTeamLead.full_name}`
+      : `${selectedRound.assessment_code} - ${selectedRound.name}`
+    : selectedTeamLead
+      ? `All submissions for ${selectedTeamLead.full_name}`
+      : "All submitted assessments";
 
   const handleGenerateReport = async (downloadDocx = false) => {
-    if (!selectedRoundId) {
-      setMessage("Select one assessment round before generating a report.");
+    if (!canGenerateReport) {
+      setMessage("There are no submitted assessments in the selected scope yet.");
       return;
     }
     setGeneratingReport(true);
     setMessage(null);
     try {
       const report = await reportService.generateReport({
-        assessment_round_id: selectedRoundId,
+        assessment_round_id: selectedRoundId || null,
         assessment_facility_id: null,
-        report_type: reportType,
-        include_comments: includeComments,
+        team_lead_user_id: selectedTeamLeadId || null,
+        report_type: "CONSOLIDATED_UCMB_DQA_REPORT",
+        include_comments: true,
       });
       setMessage(downloadDocx ? "Report generated. Opening Word download..." : "Report generated. Opening report review page...");
       if (downloadDocx) {
@@ -340,55 +342,39 @@ export function SubmissionsPage() {
       </section>
 
       <Card
-        title="Generate AI Word report"
-        subtitle="Use DeepSeek to generate a professional report from the submitted data in this selected assessment round."
+        title="Generate full consolidated report"
+        subtitle="Generate one consolidated report from live submitted data. Comments are included automatically."
       >
         <div className="grid gap-4 xl:grid-cols-[1fr_auto] xl:items-end">
           <div className="grid gap-4 md:grid-cols-3">
-            <label>
-              <span className="mb-2 block text-sm font-semibold text-brand-text">Report type</span>
-              <select
-                className="w-full rounded-2xl border border-brand-border px-4 py-3 text-sm outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
-                value={reportType}
-                onChange={(event) => setReportType(event.target.value as ReportType)}
-              >
-                <option value="CONSOLIDATED_UCMB_DQA_REPORT">Consolidated UCMB DQA Report</option>
-                <option value="EXECUTIVE_SUMMARY">Executive Summary</option>
-                <option value="CORRECTIVE_ACTION_REPORT">Corrective Action Report</option>
-              </select>
-            </label>
             <div className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-muted">Selected round</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-muted">Report scope</p>
               <p className="mt-1 text-sm font-semibold text-brand-text">
-                {selectedRound ? `${selectedRound.assessment_code} - ${selectedRound.name}` : "Select an assessment round above"}
+                {reportScopeLabel}
               </p>
             </div>
-            <label className="flex items-start gap-3 rounded-2xl border border-brand-border bg-white px-4 py-3">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={includeComments}
-                onChange={(event) => setIncludeComments(event.target.checked)}
-              />
-              <span>
-                <span className="block text-sm font-semibold text-brand-text">Include comments</span>
-                <span className="mt-1 block text-xs text-brand-muted">Includes field comments and manager notes in the report.</span>
-              </span>
-            </label>
+            <div className="rounded-2xl border border-brand-border bg-white px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-muted">Report format</p>
+              <p className="mt-1 text-sm font-semibold text-brand-text">Full consolidated report</p>
+            </div>
+            <div className="rounded-2xl border border-brand-border bg-white px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-muted">Comments</p>
+              <p className="mt-1 text-sm font-semibold text-brand-text">Included automatically</p>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"
               className="gap-2"
-              disabled={!canGenerateRoundReport || generatingReport}
+              disabled={!canGenerateReport || generatingReport}
               onClick={() => void handleGenerateReport(false)}
             >
-              <Sparkles size={16} />
+              <Eye size={16} />
               {generatingReport ? "Generating..." : "Generate and review"}
             </Button>
             <Button
               className="gap-2"
-              disabled={!canGenerateRoundReport || generatingReport}
+              disabled={!canGenerateReport || generatingReport}
               onClick={() => void handleGenerateReport(true)}
             >
               <FileText size={16} />

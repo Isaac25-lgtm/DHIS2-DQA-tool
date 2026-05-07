@@ -17,8 +17,6 @@ import { IndicatorLibraryPage } from "../pages/IndicatorLibraryPage";
 import { LoginPage } from "../pages/LoginPage";
 import { MyAssessmentsPage } from "../pages/MyAssessmentsPage";
 import { ReportDetailPage } from "../pages/ReportDetailPage";
-import { ReportGeneratorPage } from "../pages/ReportGeneratorPage";
-import { ReportsPage } from "../pages/ReportsPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { SubmissionsPage } from "../pages/SubmissionsPage";
 import { UserManagementPage } from "../pages/UserManagementPage";
@@ -76,8 +74,8 @@ export function AppRoutes() {
           <Route path="/facility-dqa/:assessmentFacilityId" element={<FacilityDqaProfilePage />} />
           <Route path="/indicator-analytics" element={<IndicatorAnalyticsPage />} />
           <Route path="/corrective-actions" element={<CorrectiveActionsPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/reports/generate" element={<ReportGeneratorPage />} />
+          <Route path="/reports" element={<Navigate to="/submissions" replace />} />
+          <Route path="/reports/generate" element={<Navigate to="/submissions" replace />} />
           <Route path="/reports/:reportId" element={<ReportDetailPage />} />
           <Route path="/users" element={<UserManagementPage />} />
         </Route>

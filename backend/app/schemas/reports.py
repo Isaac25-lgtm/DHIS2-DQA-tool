@@ -11,6 +11,7 @@ from app.models.base import ExportStatus, ExportType, ReportStatus, ReportType
 class ReportGenerateRequest(BaseModel):
     assessment_round_id: UUID | None = None
     assessment_facility_id: UUID | None = None
+    team_lead_user_id: UUID | None = None
     report_type: ReportType
     include_comments: bool = False
 
@@ -18,7 +19,10 @@ class ReportGenerateRequest(BaseModel):
     def validate_scope(self) -> "ReportGenerateRequest":
         if self.report_type == ReportType.FACILITY_DQA_REPORT and not self.assessment_facility_id:
             raise ValueError("assessment_facility_id is required for facility DQA reports.")
-        if self.report_type != ReportType.FACILITY_DQA_REPORT and not self.assessment_round_id:
+        if (
+            self.report_type not in {ReportType.FACILITY_DQA_REPORT, ReportType.CONSOLIDATED_UCMB_DQA_REPORT}
+            and not self.assessment_round_id
+        ):
             raise ValueError("assessment_round_id is required for non-facility reports.")
         return self
 

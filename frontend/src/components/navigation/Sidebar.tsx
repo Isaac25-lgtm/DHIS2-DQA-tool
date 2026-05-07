@@ -1,7 +1,6 @@
 import {
   ClipboardCheck,
   ClipboardList,
-  FileText,
   Gauge,
   PackageCheck,
   Settings,
@@ -33,7 +32,6 @@ const navSections: NavSection[] = [
     items: [
       { to: "/assessment-rounds", label: "Assessments", icon: ClipboardList, roles: ["MANAGER"] },
       { to: "/submissions", label: "Submissions", icon: ClipboardCheck, roles: ["MANAGER"] },
-      { to: "/reports", label: "Report Archive", icon: FileText, roles: ["MANAGER"] },
       { to: "/settings", label: "Settings", icon: Settings, roles: ["MANAGER"] },
     ],
   },
