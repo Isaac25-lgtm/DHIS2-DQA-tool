@@ -1,15 +1,10 @@
 import {
-  ActivitySquare,
-  Building2,
   ClipboardCheck,
   ClipboardList,
-  ClipboardX,
   FileText,
   Gauge,
-  ListChecks,
   PackageCheck,
   Settings,
-  Users,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
@@ -36,15 +31,9 @@ const navSections: NavSection[] = [
     heading: "Manager",
     roles: ["MANAGER"],
     items: [
-      { to: "/dashboard", label: "Dashboard", icon: Gauge, roles: ["MANAGER"] },
       { to: "/assessment-rounds", label: "Assessments", icon: ClipboardList, roles: ["MANAGER"] },
-      { to: "/facilities", label: "Facilities", icon: Building2, roles: ["MANAGER"] },
-      { to: "/indicators", label: "Indicators", icon: ListChecks, roles: ["MANAGER"] },
       { to: "/submissions", label: "Submissions", icon: ClipboardCheck, roles: ["MANAGER"] },
-      { to: "/analytics", label: "Analytics", icon: ActivitySquare, roles: ["MANAGER"] },
-      { to: "/corrective-actions", label: "Corrective Actions", icon: ClipboardX, roles: ["MANAGER"] },
-      { to: "/reports", label: "Reports", icon: FileText, roles: ["MANAGER"] },
-      { to: "/users", label: "Users", icon: Users, roles: ["MANAGER"] },
+      { to: "/reports", label: "Report Archive", icon: FileText, roles: ["MANAGER"] },
       { to: "/settings", label: "Settings", icon: Settings, roles: ["MANAGER"] },
     ],
   },

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, KeyRound, ShieldCheck } from "lucide-react";
 import { Card } from "../components/ui/Card";
 import { useAuth } from "../hooks/useAuth";
@@ -229,7 +230,33 @@ export function SettingsPage() {
         </button>
 
         {advancedOpen ? (
-          <dl className="mt-4 space-y-3 text-sm">
+          <div className="mt-4 space-y-5">
+            {isManager ? (
+              <div className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-4">
+                <p className="text-sm font-semibold text-brand-text">Admin maintenance tools</p>
+                <p className="mt-1 text-xs text-brand-muted">
+                  These are hidden from the daily sidebar. Use them only for cleanup, mapping checks, or troubleshooting.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[
+                    ["/facilities", "Facilities"],
+                    ["/indicators", "Indicators"],
+                    ["/users", "Users"],
+                    ["/corrective-actions", "Corrective Actions"],
+                    ["/analytics", "Analytics"],
+                  ].map(([to, label]) => (
+                    <Link
+                      key={to}
+                      to={to}
+                      className="rounded-xl border border-brand-border bg-white px-3 py-2 text-xs font-semibold text-brand-teal shadow-sm"
+                    >
+                      {label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          <dl className="space-y-3 text-sm">
             <div className="flex justify-between gap-4 rounded-2xl border border-brand-border bg-white px-4 py-3">
               <dt className="text-brand-muted">Application</dt>
               <dd className="text-right font-semibold text-brand-text">
@@ -253,6 +280,7 @@ export function SettingsPage() {
               </dd>
             </div>
           </dl>
+          </div>
         ) : null}
       </Card>
     </div>
