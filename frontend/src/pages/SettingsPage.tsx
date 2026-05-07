@@ -29,14 +29,16 @@ function readApiError(error: unknown, fallback: string) {
 
 function statusTone(status: Dhis2ConnectionStatus | null): "success" | "warning" | "danger" | "neutral" {
   if (!status) return "neutral";
-  if (status.signed_in) return "success";
+  if (status.signed_in && status.connected) return "success";
+  if (status.signed_in) return "warning";
   if (status.connected) return "warning";
   return "danger";
 }
 
 function statusLabel(status: Dhis2ConnectionStatus | null): string {
   if (!status) return "Not checked";
-  if (status.signed_in) return "Signed in";
+  if (status.signed_in && status.connected) return "Signed in";
+  if (status.signed_in) return "Session retained";
   if (status.connected) return "Reachable, not signed in";
   return "Unreachable";
 }
@@ -196,8 +198,9 @@ export function SettingsPage() {
             {showSafetyDetails ? (
               <p className="rounded-2xl border border-brand-border bg-brand-surface px-4 py-3 text-xs text-brand-muted">
                 The password is sent once to the FastAPI backend over your signed-in UCMB session. The backend keeps an active DHIS2
-                session in server memory for API calls and clears the password from this form after sign-in. The password is never
-                stored in the browser and never returned in any frontend API response.
+                session for API calls, stores the DHIS2 password only server-side in encrypted form so Render restarts do not silently
+                drop the session, and clears the password from this form after sign-in. The password is never stored in the browser and
+                never returned in any frontend API response. Use Sign out DHIS2 when you intentionally want to clear it.
               </p>
             ) : null}
           </form>

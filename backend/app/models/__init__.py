@@ -6,6 +6,7 @@ from app.models.ai_generation_log import AiGenerationLog
 from app.models.audit_log import AuditLog
 from app.models.corrective_action import CorrectiveAction
 from app.models.dhis2_extraction_log import Dhis2ExtractionLog
+from app.models.dhis2_session import Dhis2Session
 from app.models.dqa_value import DqaValue
 from app.models.export_log import ExportLog
 from app.models.facility import Facility
@@ -24,6 +25,7 @@ __all__ = [
     "AuditLog",
     "CorrectiveAction",
     "Dhis2ExtractionLog",
+    "Dhis2Session",
     "DqaValue",
     "ExportLog",
     "Facility",

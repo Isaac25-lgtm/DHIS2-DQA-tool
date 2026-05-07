@@ -1,6 +1,7 @@
 from app.services.dhis2_service import (
     _build_data_element_search_filters,
     _build_data_element_search_results,
+    _search_rank,
 )
 
 
@@ -20,6 +21,14 @@ def test_data_element_search_tokenizes_mixed_words_and_digits() -> None:
     assert "name:ilike:ANC" in filters
     assert "shortName:ilike:visits" in filters
     assert "code:ilike:105-ANC" in filters
+
+
+def test_search_rank_prioritizes_exact_typed_prefixes() -> None:
+    exact_prefix = _search_rank("PN01", ["PN01 Post Natal", "105-PN01"])
+    substring = _search_rank("PN01", ["105-PN01 Post Natal"])
+    fuzzy_tokens = _search_rank("PN01", ["Post Natal Attendance"])
+
+    assert exact_prefix < substring < fuzzy_tokens
 
 
 def test_data_element_search_expands_category_option_combo_operands() -> None:

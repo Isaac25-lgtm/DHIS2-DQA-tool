@@ -31,6 +31,7 @@ def login_to_dhis2(
         base_url=payload.base_url,
         username=payload.username,
         password=payload.password,
+        signed_in_by_user_id=current_user.id,
     )
     log_audit_event(
         db,

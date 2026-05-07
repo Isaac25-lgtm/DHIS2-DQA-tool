@@ -13,7 +13,7 @@ export function Dhis2StatusBanner() {
   const [retrying, setRetrying] = useState(false);
 
   if (!status) return null;
-  if (reachability === "reachable" && signedIn) return null;
+  if (status.connected && signedIn) return null;
 
   const handleRetry = async () => {
     setRetrying(true);
@@ -64,6 +64,31 @@ export function Dhis2StatusBanner() {
               service and redeploy to enable live DHIS2 sync.
             </p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (signedIn) {
+    return (
+      <div className="rounded-[14px] border border-sky-300 bg-sky-50 px-4 py-3 shadow-sm">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 shrink-0 text-sky-700" size={18} />
+          <div className="flex-1 text-sm">
+            <p className="font-semibold text-sky-900">DHIS2 session is retained, but verification needs a retry.</p>
+            <p className="mt-1 text-sky-800">
+              The backend kept the active DHIS2 sign-in. Retry the check or sign out from Settings only if you intentionally want to clear it.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleRetry()}
+            disabled={retrying || loading}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-sky-400 bg-white px-3 py-1.5 text-xs font-semibold text-sky-900 shadow-sm transition hover:bg-sky-100 disabled:opacity-60"
+          >
+            <RefreshCcw size={14} className={retrying ? "animate-spin" : undefined} />
+            {retrying ? "Checking..." : "Retry"}
+          </button>
         </div>
       </div>
     );

@@ -80,6 +80,20 @@ function deriveMonthRangeLabel(startDate: string | null, endDate: string | null,
   return `${startDate.slice(0, 7)} to ${endDate.slice(0, 7)}`;
 }
 
+function searchRank(query: string, values: Array<string | null | undefined>) {
+  const cleaned = query.trim().toLowerCase();
+  const compact = cleaned.replace(/\s+/g, "");
+  const texts = values.filter(Boolean).map((value) => String(value).trim().toLowerCase());
+  const compactTexts = texts.map((value) => value.replace(/\s+/g, ""));
+  if (texts.some((value) => value.startsWith(cleaned)) || compactTexts.some((value) => compact && value.startsWith(compact))) {
+    return 0;
+  }
+  if (texts.some((value) => value.includes(cleaned)) || compactTexts.some((value) => compact && value.includes(compact))) {
+    return 1;
+  }
+  return 2;
+}
+
 const emptyForm: AssessmentRoundPayload = {
   name: "",
   description: "",
@@ -387,6 +401,22 @@ export function AssessmentRoundEditor({ roundId, initialTemplateRoundId }: Asses
       const matchesGroup = indicatorGroupFilter === "ALL" || item.indicator_group === indicatorGroupFilter;
       const matchesSection = indicatorSectionFilter === "ALL" || item.hmis_section === indicatorSectionFilter;
       return matchesSearch && matchesGroup && matchesSection;
+    }).sort((left, right) => {
+      const leftRank = searchRank(searchText, [
+        left.indicator_name,
+        left.hmis_code,
+        left.dhis2_uid_or_operand,
+        left.category_combo,
+        left.dataset_name,
+      ]);
+      const rightRank = searchRank(searchText, [
+        right.indicator_name,
+        right.hmis_code,
+        right.dhis2_uid_or_operand,
+        right.category_combo,
+        right.dataset_name,
+      ]);
+      return leftRank - rightRank || left.indicator_name.localeCompare(right.indicator_name);
     });
   }, [availableIndicators, indicatorSearch, indicatorGroupFilter, indicatorSectionFilter]);
 
@@ -396,7 +426,12 @@ export function AssessmentRoundEditor({ roundId, initialTemplateRoundId }: Asses
         .join(" ")
         .toLowerCase()
         .includes(facilitySearch.trim().toLowerCase()),
-    );
+    ).sort((left, right) => {
+      const searchText = facilitySearch.trim().toLowerCase();
+      const leftRank = searchRank(searchText, [left.facility_name, left.dhis2_code, left.dhis2_org_unit_uid, left.district]);
+      const rightRank = searchRank(searchText, [right.facility_name, right.dhis2_code, right.dhis2_org_unit_uid, right.district]);
+      return leftRank - rightRank || left.facility_name.localeCompare(right.facility_name);
+    });
   }, [availableFacilities, facilitySearch]);
 
   const selectedIndicatorDetails = useMemo(() => {

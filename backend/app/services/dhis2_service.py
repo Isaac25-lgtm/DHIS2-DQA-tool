@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import base64
 from datetime import UTC, date, datetime
+import hashlib
 import re
 from typing import Any
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.database import SessionLocal
 from app.models.base import PeriodType
+from app.models.dhis2_session import Dhis2Session
 from app.models.facility import Facility
 from app.models.indicator import Indicator
 from app.schemas.dhis2 import Dhis2ConnectionStatus
@@ -23,22 +28,106 @@ DHIS2_NOT_CONFIGURED = "NOT_CONFIGURED"
 HMIS_105_DATASET_HINT = "HMIS 105"
 
 _DHIS2_ACTIVE_SESSION: dict[str, str] = {}
+_DHIS2_SESSION_ID = "active"
 _SEARCH_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+
+
+def _password_cipher() -> Fernet:
+    digest = hashlib.sha256(get_settings().secret_key.encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def _encrypt_password(password: str) -> str:
+    return _password_cipher().encrypt(password.encode("utf-8")).decode("utf-8")
+
+
+def _decrypt_password(encrypted_password: str) -> str | None:
+    try:
+        return _password_cipher().decrypt(encrypted_password.encode("utf-8")).decode("utf-8")
+    except (InvalidToken, ValueError):
+        return None
+
+
+def _has_active_memory_session() -> bool:
+    return bool(
+        _DHIS2_ACTIVE_SESSION.get("base_url")
+        and _DHIS2_ACTIVE_SESSION.get("username")
+        and _DHIS2_ACTIVE_SESSION.get("password")
+    )
+
+
+def _load_persisted_session() -> bool:
+    if _has_active_memory_session():
+        return True
+    try:
+        with SessionLocal() as db:
+            persisted = db.get(Dhis2Session, _DHIS2_SESSION_ID)
+            if not persisted:
+                return False
+            password = _decrypt_password(persisted.encrypted_password)
+            if not password:
+                return False
+            _DHIS2_ACTIVE_SESSION.clear()
+            _DHIS2_ACTIVE_SESSION.update(
+                {
+                    "base_url": persisted.base_url,
+                    "username": persisted.username,
+                    "password": password,
+                    "signed_in_at": persisted.signed_in_at.isoformat(),
+                }
+            )
+            return True
+    except Exception:
+        return False
+
+
+def _persist_session(
+    *,
+    base_url: str,
+    username: str,
+    password: str,
+    signed_in_at: datetime,
+    signed_in_by_user_id: Any = None,
+) -> None:
+    try:
+        with SessionLocal() as db:
+            persisted = db.get(Dhis2Session, _DHIS2_SESSION_ID)
+            if not persisted:
+                persisted = Dhis2Session(id=_DHIS2_SESSION_ID)
+                db.add(persisted)
+            persisted.base_url = base_url
+            persisted.username = username
+            persisted.encrypted_password = _encrypt_password(password)
+            persisted.signed_in_at = signed_in_at
+            persisted.signed_in_by_user_id = signed_in_by_user_id
+            db.commit()
+    except Exception:
+        # The in-memory session remains usable even if persistence fails.
+        return
+
+
+def _delete_persisted_session() -> None:
+    try:
+        with SessionLocal() as db:
+            persisted = db.get(Dhis2Session, _DHIS2_SESSION_ID)
+            if persisted:
+                db.delete(persisted)
+                db.commit()
+    except Exception:
+        return
 
 
 def is_dhis2_configured() -> bool:
     settings = get_settings()
     return bool(
-        (
-            _DHIS2_ACTIVE_SESSION.get("base_url")
-            and _DHIS2_ACTIVE_SESSION.get("username")
-            and _DHIS2_ACTIVE_SESSION.get("password")
-        )
+        _has_active_memory_session()
+        or _load_persisted_session()
         or (settings.dhis2_base_url and settings.dhis2_username and settings.dhis2_password)
     )
 
 
 def _client() -> httpx.Client:
+    _load_persisted_session()
     if _DHIS2_ACTIVE_SESSION.get("username") and _DHIS2_ACTIVE_SESSION.get("password"):
         return httpx.Client(
             timeout=15.0,
@@ -53,10 +142,17 @@ def _client() -> httpx.Client:
 
 
 def _base_url() -> str:
+    _load_persisted_session()
     return (_DHIS2_ACTIVE_SESSION.get("base_url") or get_settings().dhis2_base_url).rstrip("/")
 
 
-def sign_in_to_dhis2(*, base_url: str | None, username: str, password: str) -> Dhis2ConnectionStatus:
+def sign_in_to_dhis2(
+    *,
+    base_url: str | None,
+    username: str,
+    password: str,
+    signed_in_by_user_id: Any = None,
+) -> Dhis2ConnectionStatus:
     checked_at = datetime.now(UTC)
     normalized_base_url = (base_url or get_settings().dhis2_base_url).strip().rstrip("/")
     if not normalized_base_url:
@@ -73,13 +169,17 @@ def sign_in_to_dhis2(*, base_url: str | None, username: str, password: str) -> D
             response = client.get(f"{normalized_base_url}/me.json", params={"fields": "id,name"})
             response.raise_for_status()
     except httpx.HTTPError:
-        clear_dhis2_session()
+        existing_session_available = is_dhis2_configured()
         return Dhis2ConnectionStatus(
             connected=False,
-            signed_in=False,
+            signed_in=existing_session_available,
             base_url=normalized_base_url,
             last_checked_at=checked_at,
-            message="Could not sign in to DHIS2. Check username, password, base URL, or network.",
+            message=(
+                "Could not sign in to DHIS2. Check username, password, base URL, or network. "
+                "Any existing DHIS2 session was kept."
+            ),
+            reachability="reachable" if probe_dhis2_reachability(normalized_base_url) else "unreachable",
         )
 
     _DHIS2_ACTIVE_SESSION.clear()
@@ -91,17 +191,26 @@ def sign_in_to_dhis2(*, base_url: str | None, username: str, password: str) -> D
             "signed_in_at": checked_at.isoformat(),
         }
     )
+    _persist_session(
+        base_url=normalized_base_url,
+        username=username,
+        password=password,
+        signed_in_at=checked_at,
+        signed_in_by_user_id=signed_in_by_user_id,
+    )
     return Dhis2ConnectionStatus(
         connected=True,
         signed_in=True,
         base_url=normalized_base_url,
         last_checked_at=checked_at,
         message="DHIS2 sign-in successful.",
+        reachability="reachable",
     )
 
 
 def clear_dhis2_session() -> None:
     _DHIS2_ACTIVE_SESSION.clear()
+    _delete_persisted_session()
 
 
 def probe_dhis2_reachability(base_url: str | None = None) -> bool:
@@ -184,12 +293,18 @@ def check_dhis2_connection() -> Dhis2ConnectionStatus:
             reachability=reachability,
         )
     except httpx.HTTPError:
+        session_available = is_dhis2_configured()
         return Dhis2ConnectionStatus(
             connected=False,
-            signed_in=False,
+            signed_in=session_available,
             base_url=base_url,
             last_checked_at=checked_at,
-            message="DHIS2 is reachable but the saved credentials no longer work. Sign in again from Settings.",
+            message=(
+                "DHIS2 is reachable but the active session could not be verified. "
+                "The session was kept; only use Sign out if you want to clear it."
+                if session_available
+                else "DHIS2 is reachable but no manager is signed in. Sign in again from Settings."
+            ),
             reachability=reachability,
         )
 
@@ -263,7 +378,22 @@ def search_dhis2_facilities(db: Session, query: str) -> list[Dhis2FacilitySearch
                 already_imported=str(item["id"]) in imported_uids,
             )
         )
-    return results
+    return sorted(
+        results,
+        key=lambda item: (
+            _search_rank(
+                cleaned,
+                [
+                    item.facility_name,
+                    item.dhis2_code,
+                    item.dhis2_org_unit_uid,
+                    item.district,
+                    item.dhis2_parent_name,
+                ],
+            ),
+            item.facility_name.lower(),
+        ),
+    )
 
 
 def _extract_hmis_code(item: dict[str, Any]) -> str | None:
@@ -320,6 +450,24 @@ def _build_category_option_combo_search_filters(query: str) -> list[str]:
         if 8 <= len(candidate) <= 16 and " " not in candidate:
             filters.append(f"id:eq:{candidate}")
     return list(dict.fromkeys(filters))
+
+
+def _search_rank(query: str, values: list[str | None]) -> int:
+    cleaned = query.strip().lower()
+    compact = re.sub(r"\s+", "", cleaned)
+    texts = [str(value).strip().lower() for value in values if value]
+    compact_texts = [re.sub(r"\s+", "", value) for value in texts]
+    if not cleaned:
+        return 99
+    if any(value.startswith(cleaned) or (compact and value.startswith(compact)) for value in texts + compact_texts):
+        return 0
+    if any(cleaned in value or (compact and compact in value) for value in texts + compact_texts):
+        return 1
+    tokens = [token.lower() for token in _SEARCH_TOKEN_PATTERN.findall(query)]
+    combined = " ".join(texts)
+    if tokens and all(token in combined for token in tokens):
+        return 2
+    return 3
 
 
 def _dataset_name_for_data_element(item: dict[str, Any]) -> str | None:
@@ -597,9 +745,24 @@ def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElement
                 continue
             seen_identifiers.add(result.dhis2_uid_or_operand)
             results.append(result)
-            if len(results) >= 120:
-                return results
-    return results
+    return sorted(
+        results,
+        key=lambda item: (
+            _search_rank(
+                cleaned,
+                [
+                    item.name,
+                    item.short_name,
+                    item.hmis_code,
+                    item.dhis2_uid_or_operand,
+                    item.data_element_uid,
+                    item.category_combo,
+                    item.dataset_name,
+                ],
+            ),
+            item.name.lower(),
+        ),
+    )[:120]
 
 
 def normalize_reporting_period(reporting_period: str, period_type: PeriodType) -> str:
