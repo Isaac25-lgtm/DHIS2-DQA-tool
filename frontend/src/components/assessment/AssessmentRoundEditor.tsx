@@ -323,7 +323,16 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
       return [];
     }
     return availableIndicators.filter((item) => {
-      const matchesSearch = [item.indicator_name, item.hmis_code, item.dhis2_uid_or_operand ?? "", item.source_register ?? ""]
+      const matchesSearch = [
+        item.indicator_name,
+        item.hmis_code,
+        item.dhis2_uid_or_operand ?? "",
+        item.category_combo ?? "",
+        item.dataset_name ?? "",
+        item.hmis_section ?? "",
+        item.indicator_group,
+        item.source_register ?? "",
+      ]
         .join(" ")
         .toLowerCase()
         .includes(searchText);
@@ -1058,6 +1067,9 @@ export function AssessmentRoundEditor({ roundId }: AssessmentRoundEditorProps) {
                                 {alreadyLocal || result.already_imported ? <Badge tone="success">Already imported</Badge> : null}
                               </div>
                               <p className="mt-1 text-sm text-brand-muted">{result.dataset_name ?? "Dataset not shown by DHIS2"}</p>
+                              {result.category_combo ? (
+                                <p className="mt-1 text-xs font-semibold text-brand-navy">Combo: {result.category_combo}</p>
+                              ) : null}
                               <p className="mt-1 break-all text-xs text-brand-muted">{result.dhis2_uid_or_operand}</p>
                             </div>
                             <Button

@@ -302,6 +302,201 @@ def _build_data_element_search_filters(query: str) -> list[str]:
     return list(dict.fromkeys(filters))
 
 
+def _build_category_option_combo_search_filters(query: str) -> list[str]:
+    cleaned = query.strip()
+    compact = re.sub(r"\s+", "", cleaned)
+    candidates = [cleaned, compact, cleaned.upper(), compact.upper()]
+    candidates.extend(_SEARCH_TOKEN_PATTERN.findall(cleaned))
+
+    filters: list[str] = []
+    for candidate in dict.fromkeys(value for value in candidates if len(value) >= 2):
+        filters.extend(
+            [
+                f"identifiable:token:{candidate}",
+                f"name:ilike:{candidate}",
+                f"code:ilike:{candidate}",
+            ]
+        )
+        if 8 <= len(candidate) <= 16 and " " not in candidate:
+            filters.append(f"id:eq:{candidate}")
+    return list(dict.fromkeys(filters))
+
+
+def _dataset_name_for_data_element(item: dict[str, Any]) -> str | None:
+    datasets = [
+        element.get("dataSet", {}).get("name")
+        for element in item.get("dataSetElements", [])
+        if isinstance(element, dict)
+    ]
+    dataset_name = next((name for name in datasets if name and HMIS_105_DATASET_HINT in name), None)
+    if not dataset_name:
+        dataset_name = next((name for name in datasets if name), None)
+    return dataset_name
+
+
+def _category_combo_for_data_element(item: dict[str, Any]) -> dict[str, Any]:
+    return item.get("categoryCombo") if isinstance(item.get("categoryCombo"), dict) else {}
+
+
+def _category_option_combo_name(option_combo: dict[str, Any]) -> str:
+    name = str(option_combo.get("name") or "").strip()
+    if name:
+        return name
+    option_names = [
+        str(option.get("name")).strip()
+        for option in option_combo.get("categoryOptions", [])
+        if isinstance(option, dict) and option.get("name")
+    ]
+    return ", ".join(option_names)
+
+
+def _category_combo_label(category_combo_name: str | None, option_combo: dict[str, Any] | None = None) -> str | None:
+    option_combo_name = _category_option_combo_name(option_combo or {}) if option_combo else None
+    parts = [
+        part
+        for part in (category_combo_name, option_combo_name)
+        if part and part.lower() not in {"default", "default category combo", "default option combo"}
+    ]
+    return " - ".join(dict.fromkeys(parts)) or category_combo_name or option_combo_name
+
+
+def _data_element_search_result(
+    item: dict[str, Any],
+    *,
+    identifier: str,
+    category_combo_label: str | None,
+    imported_identifiers: set[str],
+    option_combo_name: str | None = None,
+) -> Dhis2DataElementSearchResult:
+    name = str(item["name"])
+    if option_combo_name and option_combo_name.lower() not in name.lower():
+        name = f"{name} - {option_combo_name}"
+
+    return Dhis2DataElementSearchResult(
+        data_element_uid=str(item["id"]),
+        dhis2_uid_or_operand=identifier,
+        name=name,
+        short_name=item.get("shortName"),
+        hmis_code=_extract_hmis_code(item),
+        value_type=item.get("valueType"),
+        aggregation_type=item.get("aggregationType"),
+        category_combo=category_combo_label,
+        dataset_name=_dataset_name_for_data_element(item),
+        already_imported=identifier in imported_identifiers,
+    )
+
+
+def _build_data_element_search_results(
+    item: dict[str, Any],
+    *,
+    category_option_combos: list[dict[str, Any]],
+    imported_identifiers: set[str],
+    include_plain_result: bool,
+    allowed_option_combo_ids: set[str] | None = None,
+) -> list[Dhis2DataElementSearchResult]:
+    if not isinstance(item, dict) or not item.get("id") or not item.get("name"):
+        return []
+
+    identifier = str(item["id"])
+    category_combo = _category_combo_for_data_element(item)
+    category_combo_name = category_combo.get("name")
+    results: list[Dhis2DataElementSearchResult] = []
+
+    filtered_option_combos = [
+        combo
+        for combo in category_option_combos
+        if isinstance(combo, dict)
+        and combo.get("id")
+        and (allowed_option_combo_ids is None or str(combo["id"]) in allowed_option_combo_ids)
+    ]
+
+    for option_combo in filtered_option_combos:
+        option_combo_id = str(option_combo["id"])
+        option_combo_name = _category_option_combo_name(option_combo)
+        results.append(
+            _data_element_search_result(
+                item,
+                identifier=f"{identifier}.{option_combo_id}",
+                category_combo_label=_category_combo_label(category_combo_name, option_combo),
+                imported_identifiers=imported_identifiers,
+                option_combo_name=option_combo_name,
+            )
+        )
+
+    if include_plain_result:
+        results.append(
+            _data_element_search_result(
+                item,
+                identifier=identifier,
+                category_combo_label=_category_combo_label(category_combo_name),
+                imported_identifiers=imported_identifiers,
+            )
+        )
+
+    return results
+
+
+def _matching_category_option_combos(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    query: str,
+) -> tuple[dict[str, list[dict[str, Any]]], set[str]]:
+    endpoint = f"{base_url}/categoryOptionCombos.json"
+    combos_by_category_combo: dict[str, list[dict[str, Any]]] = {}
+    matching_combo_ids: set[str] = set()
+    for filter_value in _build_category_option_combo_search_filters(query):
+        try:
+            response = client.get(
+                endpoint,
+                params={
+                    "filter": filter_value,
+                    "fields": "id,name,code,categoryCombo[id,name],categoryOptions[id,name,code]",
+                    "pageSize": 50,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            continue
+        for combo in payload.get("categoryOptionCombos", []):
+            if not isinstance(combo, dict) or not combo.get("id"):
+                continue
+            category_combo = combo.get("categoryCombo") if isinstance(combo.get("categoryCombo"), dict) else {}
+            category_combo_id = category_combo.get("id")
+            if not category_combo_id:
+                continue
+            combo.setdefault("categoryCombo", category_combo)
+            combos_by_category_combo.setdefault(str(category_combo_id), []).append(combo)
+            matching_combo_ids.add(str(combo["id"]))
+    return combos_by_category_combo, matching_combo_ids
+
+
+def _category_option_combos_for_category_combo(
+    client: httpx.Client,
+    *,
+    base_url: str,
+    category_combo_id: str,
+) -> list[dict[str, Any]]:
+    try:
+        response = client.get(
+            f"{base_url}/categoryCombos/{category_combo_id}.json",
+            params={
+                "fields": "id,name,categoryOptionCombos[id,name,code,categoryOptions[id,name,code]]",
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return []
+
+    return [
+        combo
+        for combo in payload.get("categoryOptionCombos", [])
+        if isinstance(combo, dict) and combo.get("id")
+    ]
+
+
 def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElementSearchResult]:
     if not is_dhis2_configured():
         return []
@@ -309,13 +504,21 @@ def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElement
     if len(cleaned) < 2:
         return []
 
-    endpoint = f"{_base_url()}/dataElements.json"
+    base_url = _base_url()
+    endpoint = f"{base_url}/dataElements.json"
     filters = _build_data_element_search_filters(cleaned)
 
     fields = "id,name,shortName,code,valueType,aggregationType,categoryCombo[id,name],dataSetElements[dataSet[id,name]]"
     items_by_id: dict[str, dict[str, Any]] = {}
+    direct_match_ids: set[str] = set()
+    category_combo_match_ids: dict[str, set[str]] = {}
     try:
         with _client() as client:
+            combos_by_category_combo, matching_combo_ids = _matching_category_option_combos(
+                client,
+                base_url=base_url,
+                query=cleaned,
+            )
             for filter_value in dict.fromkeys(filters):
                 response = client.get(
                     endpoint,
@@ -330,6 +533,40 @@ def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElement
                 for item in payload.get("dataElements", []):
                     if isinstance(item, dict) and item.get("id"):
                         items_by_id[str(item["id"])] = item
+                        direct_match_ids.add(str(item["id"]))
+            for category_combo_id, combos in combos_by_category_combo.items():
+                try:
+                    response = client.get(
+                        endpoint,
+                        params={
+                            "filter": f"categoryCombo.id:eq:{category_combo_id}",
+                            "fields": fields,
+                            "pageSize": 50,
+                        },
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                except (httpx.HTTPError, ValueError):
+                    continue
+                allowed_combo_ids = {str(combo["id"]) for combo in combos if isinstance(combo, dict) and combo.get("id")}
+                category_combo_match_ids.setdefault(category_combo_id, set()).update(allowed_combo_ids)
+                for item in payload.get("dataElements", []):
+                    if isinstance(item, dict) and item.get("id"):
+                        items_by_id[str(item["id"])] = item
+            category_combo_ids = {
+                str(category_combo["id"])
+                for item in items_by_id.values()
+                for category_combo in [_category_combo_for_data_element(item)]
+                if category_combo.get("id")
+            }
+            for category_combo_id in category_combo_ids:
+                fetched_combos = _category_option_combos_for_category_combo(
+                    client,
+                    base_url=base_url,
+                    category_combo_id=category_combo_id,
+                )
+                if fetched_combos:
+                    combos_by_category_combo[category_combo_id] = fetched_combos
     except (httpx.HTTPError, ValueError):
         return []
 
@@ -339,33 +576,29 @@ def search_dhis2_data_elements(db: Session, query: str) -> list[Dhis2DataElement
         )
     )
     results: list[Dhis2DataElementSearchResult] = []
+    seen_identifiers: set[str] = set()
     for item in items_by_id.values():
-        if not isinstance(item, dict) or not item.get("id") or not item.get("name"):
-            continue
-        datasets = [
-            element.get("dataSet", {}).get("name")
-            for element in item.get("dataSetElements", [])
-            if isinstance(element, dict)
-        ]
-        dataset_name = next((name for name in datasets if name and HMIS_105_DATASET_HINT in name), None)
-        if not dataset_name:
-            dataset_name = next((name for name in datasets if name), None)
-        category_combo = item.get("categoryCombo") if isinstance(item.get("categoryCombo"), dict) else {}
-        identifier = str(item["id"])
-        results.append(
-            Dhis2DataElementSearchResult(
-                data_element_uid=identifier,
-                dhis2_uid_or_operand=identifier,
-                name=str(item["name"]),
-                short_name=item.get("shortName"),
-                hmis_code=_extract_hmis_code(item),
-                value_type=item.get("valueType"),
-                aggregation_type=item.get("aggregationType"),
-                category_combo=category_combo.get("name"),
-                dataset_name=dataset_name,
-                already_imported=identifier in imported_identifiers,
-            )
+        category_combo = _category_combo_for_data_element(item)
+        category_combo_id = str(category_combo.get("id") or "")
+        item_id = str(item.get("id") or "")
+        item_results = _build_data_element_search_results(
+            item,
+            category_option_combos=combos_by_category_combo.get(category_combo_id, []),
+            imported_identifiers=imported_identifiers,
+            include_plain_result=item_id in direct_match_ids,
+            allowed_option_combo_ids=(
+                None
+                if item_id in direct_match_ids
+                else category_combo_match_ids.get(category_combo_id, matching_combo_ids)
+            ),
         )
+        for result in item_results:
+            if result.dhis2_uid_or_operand in seen_identifiers:
+                continue
+            seen_identifiers.add(result.dhis2_uid_or_operand)
+            results.append(result)
+            if len(results) >= 120:
+                return results
     return results
 
 
