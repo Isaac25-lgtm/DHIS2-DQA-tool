@@ -82,16 +82,62 @@ function deriveMonthRangeLabel(startDate: string | null, endDate: string | null,
 
 function searchRank(query: string, values: Array<string | null | undefined>) {
   const cleaned = query.trim().toLowerCase();
-  const compact = cleaned.replace(/\s+/g, "");
+  const normalizedQuery = cleaned.replace(/[^a-z0-9]+/g, "");
+  const queryTokens = cleaned.match(/[a-z0-9]+/g)?.filter((token) => token.length >= 2) ?? [];
   const texts = values.filter(Boolean).map((value) => String(value).trim().toLowerCase());
-  const compactTexts = texts.map((value) => value.replace(/\s+/g, ""));
-  if (texts.some((value) => value.startsWith(cleaned)) || compactTexts.some((value) => compact && value.startsWith(compact))) {
+  const normalizedTexts = texts.map((value) => value.replace(/[^a-z0-9]+/g, ""));
+  const valueTokens = texts.flatMap((value) => value.match(/[a-z0-9]+/g) ?? []);
+  const valueTokenSets = texts.map((value) => new Set(value.match(/[a-z0-9]+/g) ?? []));
+  if (!cleaned) {
+    return 99;
+  }
+  if (texts.some((value) => value === cleaned) || normalizedTexts.some((value) => normalizedQuery && value === normalizedQuery)) {
     return 0;
   }
-  if (texts.some((value) => value.includes(cleaned)) || compactTexts.some((value) => compact && value.includes(compact))) {
+  if (queryTokens.length > 0 && valueTokenSets.some((tokens) => queryTokens.every((token) => tokens.has(token)))) {
     return 1;
   }
-  return 2;
+  if (
+    texts.some((value) => value.startsWith(cleaned)) ||
+    normalizedTexts.some((value) => normalizedQuery && value.startsWith(normalizedQuery)) ||
+    valueTokens.some((token) => normalizedQuery && token === normalizedQuery)
+  ) {
+    return 2;
+  }
+  if (valueTokens.some((token) => normalizedQuery && normalizedQuery.length >= 2 && token.startsWith(normalizedQuery))) {
+    return 3;
+  }
+  if (texts.some((value) => value.includes(cleaned)) || normalizedTexts.some((value) => normalizedQuery && value.includes(normalizedQuery))) {
+    return 4;
+  }
+  if (queryTokens.length > 0 && queryTokens.every((token) => texts.join(" ").includes(token))) {
+    return 5;
+  }
+  if (normalizedQuery && normalizedTexts.some((value) => queryTokens.every((token) => value.includes(token)))) {
+    return 6;
+  }
+  return 7;
+}
+
+function rankIndicatorSearchResult(query: string, item: {
+  name?: string;
+  indicator_name?: string;
+  short_name?: string | null;
+  hmis_code?: string | null;
+  dhis2_uid_or_operand?: string | null;
+  data_element_uid?: string | null;
+  category_combo?: string | null;
+  dataset_name?: string | null;
+}) {
+  return searchRank(query, [
+    item.name ?? item.indicator_name,
+    item.short_name,
+    item.hmis_code,
+    item.dhis2_uid_or_operand,
+    item.data_element_uid,
+    item.category_combo,
+    item.dataset_name,
+  ]);
 }
 
 const emptyForm: AssessmentRoundPayload = {
@@ -333,7 +379,13 @@ export function AssessmentRoundEditor({ roundId, initialTemplateRoundId }: Asses
       setSearchingDhis2Indicators(true);
       try {
         const results = await dhis2Service.searchDataElements(query);
-        setDhis2IndicatorResults(results);
+        setDhis2IndicatorResults(
+          [...results].sort(
+            (left, right) =>
+              rankIndicatorSearchResult(query, left) - rankIndicatorSearchResult(query, right) ||
+              left.name.localeCompare(right.name),
+          ),
+        );
       } catch {
         setDhis2IndicatorResults([]);
       } finally {
@@ -402,20 +454,8 @@ export function AssessmentRoundEditor({ roundId, initialTemplateRoundId }: Asses
       const matchesSection = indicatorSectionFilter === "ALL" || item.hmis_section === indicatorSectionFilter;
       return matchesSearch && matchesGroup && matchesSection;
     }).sort((left, right) => {
-      const leftRank = searchRank(searchText, [
-        left.indicator_name,
-        left.hmis_code,
-        left.dhis2_uid_or_operand,
-        left.category_combo,
-        left.dataset_name,
-      ]);
-      const rightRank = searchRank(searchText, [
-        right.indicator_name,
-        right.hmis_code,
-        right.dhis2_uid_or_operand,
-        right.category_combo,
-        right.dataset_name,
-      ]);
+      const leftRank = rankIndicatorSearchResult(searchText, left);
+      const rightRank = rankIndicatorSearchResult(searchText, right);
       return leftRank - rightRank || left.indicator_name.localeCompare(right.indicator_name);
     });
   }, [availableIndicators, indicatorSearch, indicatorGroupFilter, indicatorSectionFilter]);

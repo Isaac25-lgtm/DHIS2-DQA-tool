@@ -24,11 +24,23 @@ def test_data_element_search_tokenizes_mixed_words_and_digits() -> None:
 
 
 def test_search_rank_prioritizes_exact_typed_prefixes() -> None:
-    exact_prefix = _search_rank("PN01", ["PN01 Post Natal", "105-PN01"])
-    substring = _search_rank("PN01", ["105-PN01 Post Natal"])
-    fuzzy_tokens = _search_rank("PN01", ["Post Natal Attendance"])
+    exact_code = _search_rank("PN01", ["105-PN01", "105-PN01. Post Natal Attendances - Timing 6Dys"])
+    unrelated_fuzzy = _search_rank("PN01", ["017-ID01. IPNo (Mother)"])
 
-    assert exact_prefix < substring < fuzzy_tokens
+    assert exact_code < unrelated_fuzzy
+
+
+def test_search_rank_prioritizes_exact_full_dhis2_name() -> None:
+    exact_name = _search_rank(
+        "105-PN01. Post Natal Attendances - Timing 6Dys",
+        ["105-PN01. Post Natal Attendances - Timing 6Dys"],
+    )
+    partial_name = _search_rank(
+        "105-PN01. Post Natal Attendances - Timing 6Dys",
+        ["105-PN01. Post Natal Attendances - Timing"],
+    )
+
+    assert exact_name < partial_name
 
 
 def test_data_element_search_expands_category_option_combo_operands() -> None:

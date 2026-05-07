@@ -452,22 +452,72 @@ def _build_category_option_combo_search_filters(query: str) -> list[str]:
     return list(dict.fromkeys(filters))
 
 
+def _normalize_search_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _search_tokens(value: str) -> list[str]:
+    return [token.lower() for token in _SEARCH_TOKEN_PATTERN.findall(value)]
+
+
 def _search_rank(query: str, values: list[str | None]) -> int:
     cleaned = query.strip().lower()
-    compact = re.sub(r"\s+", "", cleaned)
+    normalized_query = _normalize_search_text(cleaned)
+    query_tokens = _search_tokens(query)
+    significant_query_tokens = [token for token in query_tokens if len(token) >= 2]
     texts = [str(value).strip().lower() for value in values if value]
-    compact_texts = [re.sub(r"\s+", "", value) for value in texts]
+    normalized_texts = [_normalize_search_text(value) for value in texts]
+    value_token_sets = [set(_search_tokens(value)) for value in texts]
+    value_tokens = [token for value in texts for token in _search_tokens(value)]
     if not cleaned:
         return 99
-    if any(value.startswith(cleaned) or (compact and value.startswith(compact)) for value in texts + compact_texts):
+
+    if any(value == cleaned or (normalized_query and value == normalized_query) for value in texts + normalized_texts):
         return 0
-    if any(cleaned in value or (compact and compact in value) for value in texts + compact_texts):
+
+    if significant_query_tokens and any(
+        set(significant_query_tokens).issubset(tokens) for tokens in value_token_sets
+    ):
         return 1
-    tokens = [token.lower() for token in _SEARCH_TOKEN_PATTERN.findall(query)]
-    combined = " ".join(texts)
-    if tokens and all(token in combined for token in tokens):
+
+    if any(
+        value.startswith(cleaned)
+        or (normalized_query and value.startswith(normalized_query))
+        for value in texts + normalized_texts
+    ):
         return 2
-    return 3
+
+    if normalized_query and any(token == normalized_query for token in value_tokens):
+        return 2
+
+    if any(
+        token.startswith(normalized_query)
+        for token in value_tokens
+        if normalized_query and len(normalized_query) >= 2
+    ):
+        return 3
+
+    if any(cleaned in value or (normalized_query and normalized_query in value) for value in texts + normalized_texts):
+        return 4
+
+    combined = " ".join(texts)
+    if significant_query_tokens and all(token in combined for token in significant_query_tokens):
+        return 5
+
+    if normalized_query and any(
+        all(token in value for token in significant_query_tokens)
+        for value in normalized_texts
+    ):
+        return 6
+
+    return 7
+
+
+def _search_sort_text(values: list[str | None]) -> str:
+    for value in values:
+        if value:
+            return str(value).lower()
+    return ""
 
 
 def _dataset_name_for_data_element(item: dict[str, Any]) -> str | None:
