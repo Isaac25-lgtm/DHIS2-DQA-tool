@@ -299,12 +299,12 @@ def pull_dhis2_values_for_assessment(
                     dqa_value.dhis2_extracted_at = normalized_extracted_at
             else:
                 if latest_refresh:
-                    dqa_value.dhis2_value_latest = None
+                    dqa_value.dhis2_value_latest = 0
                     dqa_value.dhis2_latest_api_status = DHIS2_NO_DATA
                     dqa_value.dhis2_latest_error_message = None
                     dqa_value.dhis2_latest_extracted_at = extracted_at
                 else:
-                    dqa_value.dhis2_value_at_assessment = None
+                    dqa_value.dhis2_value_at_assessment = 0
                     dqa_value.dhis2_api_status = DHIS2_NO_DATA
                     dqa_value.dhis2_error_message = None
                     dqa_value.dhis2_extracted_at = extracted_at

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRight, CalendarRange, ClipboardList, PlusCircle, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarRange, ClipboardList, PlusCircle, RefreshCw, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -26,7 +26,9 @@ export function AssessmentRoundsPage() {
   const [rounds, setRounds] = useState<AssessmentRoundListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadRounds = useCallback(async () => {
     setLoading(true);
@@ -40,6 +42,23 @@ export function AssessmentRoundsPage() {
       setLoading(false);
     }
   }, []);
+
+  const syncRoundUpdates = useCallback(async (round: AssessmentRoundListItem) => {
+    setSyncingId(round.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await assessmentRoundService.syncDhis2Values(round.id);
+      await loadRounds();
+      setNotice(
+        `DHIS2 updates synced for ${round.assessment_code}: ${result.synced_facilities} facilities updated, ${result.failed_facilities} failed.`,
+      );
+    } catch {
+      setError("Unable to sync DHIS2 updates for this assessment. Confirm DHIS2 sign-in, then try again.");
+    } finally {
+      setSyncingId(null);
+    }
+  }, [loadRounds]);
 
   useEffect(() => {
     void loadRounds();
@@ -149,21 +168,32 @@ export function AssessmentRoundsPage() {
               {user?.role === "MANAGER" ? "Edit assessment" : "View"}
             </Link>
             {user?.role === "MANAGER" ? (
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-sm font-semibold text-brand-danger disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={deletingId === row.original.id}
-                onClick={() => void deleteRound(row.original)}
-              >
-                <Trash2 size={14} />
-                {deletingId === row.original.id ? "Deleting..." : "Delete"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-brand-navy disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={syncingId === row.original.id}
+                  onClick={() => void syncRoundUpdates(row.original)}
+                >
+                  <RefreshCw size={14} />
+                  {syncingId === row.original.id ? "Syncing..." : "Sync updates"}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-brand-danger disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={deletingId === row.original.id}
+                  onClick={() => void deleteRound(row.original)}
+                >
+                  <Trash2 size={14} />
+                  {deletingId === row.original.id ? "Deleting..." : "Delete"}
+                </button>
+              </>
             ) : null}
           </div>
         ),
       },
     ],
-    [deleteRound, deletingId, user?.role],
+    [deleteRound, deletingId, syncRoundUpdates, syncingId, user?.role],
   );
 
   return (
@@ -195,6 +225,7 @@ export function AssessmentRoundsPage() {
       </Card>
 
       {error ? <p className="text-sm text-brand-danger">{error}</p> : null}
+      {notice ? <p className="text-sm font-semibold text-brand-teal">{notice}</p> : null}
 
       {loading ? (
         <Card>
@@ -243,6 +274,16 @@ export function AssessmentRoundsPage() {
                       >
                         Add another team/facility batch
                       </Link>
+                      {user?.role === "MANAGER" ? (
+                        <button
+                          type="button"
+                          className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-brand-navy shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={syncingId === latestRound.id}
+                          onClick={() => void syncRoundUpdates(latestRound)}
+                        >
+                          {syncingId === latestRound.id ? "Syncing updates..." : "Sync updates"}
+                        </button>
+                      ) : null}
                     </div>
                     <div className="mt-4 space-y-2">
                       {section.rounds.slice(0, 3).map((round) => (

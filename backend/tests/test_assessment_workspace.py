@@ -8,7 +8,7 @@ from app.models.dqa_value import DqaValue
 from app.models.indicator import Indicator
 from app.models.source_document_check import SourceDocumentCheck
 from app.services import assessment_workspace_service
-from app.services.dhis2_service import fetch_dhis2_values
+from app.services.dhis2_service import fetch_dhis2_values, normalize_dhis2_analytics_response
 
 
 def _create_published_assignment(client, manager_token: str, facility_id: str, indicator_id: str, assessor_id: str) -> str:
@@ -331,6 +331,24 @@ def test_dhis2_service_normalizes_simple_uids_and_operands(monkeypatch) -> None:
     assert response["idXOxt69W0e"]["value"] == 100
     assert response["idXOxt69W0e"]["status"] == "SUCCESS"
     assert response["RYcEItpNCUp.Ck8FveDhZSy"]["value"] == 55
+
+
+def test_dhis2_service_zero_fills_missing_analytics_rows_after_successful_sync() -> None:
+    payload = {
+        "headers": [{"name": "dx"}, {"name": "value"}],
+        "rows": [["maternalDeathsUid", "0"]],
+    }
+
+    response = normalize_dhis2_analytics_response(
+        payload,
+        ["maternalDeathsUid", "newbornDeathsUid"],
+        extracted_at=datetime.now(UTC),
+    )
+
+    assert response["maternalDeathsUid"]["value"] == 0
+    assert response["maternalDeathsUid"]["status"] == "SUCCESS"
+    assert response["newbornDeathsUid"]["value"] == 0
+    assert response["newbornDeathsUid"]["status"] == "NO_DATA"
 
 
 def test_dhis2_service_uses_exact_month_range_and_sums_values(monkeypatch) -> None:

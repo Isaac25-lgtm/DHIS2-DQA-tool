@@ -46,6 +46,7 @@ from app.services.assessment_round_service import (
 )
 from app.services.assessment_workspace_service import pull_dhis2_values_for_assessment
 from app.services.audit_service import log_audit_event
+from app.services.comparison_service import run_comparison_for_assessment_facility
 
 router = APIRouter(tags=["assessment-rounds"])
 
@@ -406,6 +407,7 @@ def sync_round_dhis2_values(
         if response.message:
             failed += 1
         else:
+            run_comparison_for_assessment_facility(db, assessment_facility.id, current_user)
             synced += 1
     log_audit_event(
         db,

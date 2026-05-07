@@ -829,11 +829,12 @@ def _empty_result(
     *,
     status: str,
     extracted_at: datetime,
+    value: int | None = None,
     error_message: str | None = None,
 ) -> dict[str, Any]:
     return {
         "identifier": identifier,
-        "value": None,
+        "value": value,
         "status": status,
         "error_message": error_message,
         "extracted_at": extracted_at,
@@ -848,7 +849,7 @@ def normalize_dhis2_analytics_response(
 ) -> dict[str, dict[str, Any]]:
     extracted_timestamp = extracted_at or datetime.now(UTC)
     normalized = {
-        identifier: _empty_result(identifier, status=DHIS2_NO_DATA, extracted_at=extracted_timestamp)
+        identifier: _empty_result(identifier, status=DHIS2_NO_DATA, value=0, extracted_at=extracted_timestamp)
         for identifier in identifiers
     }
     headers = payload.get("headers") or []
