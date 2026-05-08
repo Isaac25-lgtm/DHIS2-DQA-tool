@@ -1,4 +1,5 @@
 from app.models.assessment_facility import AssessmentFacility
+from app.models.assessment_comment import AssessmentComment
 from app.models.assessment_facility_team_member import AssessmentFacilityTeamMember
 from app.models.assessment_round import AssessmentRound
 from app.models.assessment_round_indicator import AssessmentRoundIndicator
@@ -19,6 +20,7 @@ from app.models.user import User
 
 __all__ = [
     "AssessmentFacility",
+    "AssessmentComment",
     "AssessmentRound",
     "AssessmentRoundIndicator",
     "AiGenerationLog",

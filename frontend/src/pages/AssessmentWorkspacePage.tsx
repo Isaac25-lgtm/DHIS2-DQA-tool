@@ -20,6 +20,7 @@ import {
 import { syncService } from "../services/syncService";
 import type {
   AssessmentDraft,
+  AssessmentComment,
   AssessmentWorkspace,
   DqaValue,
   SyncDraftResult,
@@ -82,6 +83,35 @@ function mergeDraftIntoValues(serverValues: DqaValue[], draft: AssessmentDraft |
       assessor_comment: local.assessor_comment,
     };
   });
+}
+
+function formatCommentDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function GeneralCommentThread({ comments }: { comments: AssessmentComment[] }) {
+  if (!comments.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-brand-border bg-brand-surface/60 px-4 py-3 text-sm text-brand-muted">
+        No general facility comments have been added yet.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {comments.map((comment) => (
+        <div key={comment.id} className="rounded-xl border border-brand-border bg-brand-surface/60 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-muted">
+            <span>{comment.author_name ?? "Assessor"}</span>
+            <span>{formatCommentDate(comment.created_at)}</span>
+          </div>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-brand-text">{comment.comment_text}</p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 type PrimaryBannerVariant =
@@ -400,6 +430,8 @@ export function AssessmentWorkspacePage() {
     workspaceDhis2PullMessage: workspace.dhis2_pull_message ?? null,
     localSaveError: autoSaveStatus === "ERROR_SAVING_LOCALLY",
   });
+  const workspaceComments = workspace.comments ?? [];
+  const generalComments = workspaceComments.filter((comment) => comment.comment_type === "GENERAL");
 
   return (
     <div className="space-y-6">
@@ -440,18 +472,21 @@ export function AssessmentWorkspacePage() {
         <AssessmentValueTable
           indicators={workspace.selected_indicators}
           values={editableValues}
+          comments={workspaceComments}
           onChange={updateValue}
           disabled={Boolean(readOnly)}
         />
       </Card>
 
-      <Card title="General facility assessment comment" subtitle="Summarize document or reporting issues for this facility.">
+      <Card title="General facility assessment comments" subtitle="Each assessor can add to the shared facility comment trail.">
+        <GeneralCommentThread comments={generalComments} />
         <Textarea
           rows={4}
           value={generalAssessmentComment}
           onChange={(event) => setGeneralAssessmentComment(event.target.value)}
           disabled={Boolean(readOnly)}
-          placeholder="Example: Maternity register incomplete; HMIS 105 report verified with records officer."
+          placeholder="Add a new general comment or revision for this facility."
+          className="mt-4"
         />
       </Card>
     </div>

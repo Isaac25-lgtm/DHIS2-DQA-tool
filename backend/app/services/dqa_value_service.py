@@ -10,7 +10,19 @@ from app.models.base import AssessmentFacilityStatus, ComparisonStatus, DqaValue
 from app.models.dqa_value import DqaValue
 from app.models.user import User
 from app.schemas.assessment_workspace import DqaValueUpsert
+from app.services.assessment_comment_service import (
+    COMMENT_TYPE_GENERAL,
+    COMMENT_TYPE_INDICATOR,
+    append_assessment_comment,
+)
 from app.services.assessment_workspace_service import _compute_value_status, ensure_can_edit_assessment_workspace
+
+
+def _normalize_comment(comment: str | None) -> str | None:
+    if not isinstance(comment, str):
+        return None
+    normalized = comment.strip()
+    return normalized or None
 
 
 def _validate_selected_indicators(assessment_facility: AssessmentFacility, values: list[DqaValueUpsert]) -> None:
@@ -67,7 +79,18 @@ def upsert_dqa_values(
 
         current_value.register_value = payload.register_value
         current_value.hmis105_value = payload.hmis105_value
+        previous_assessor_comment = _normalize_comment(current_value.assessor_comment)
+        next_assessor_comment = _normalize_comment(payload.assessor_comment)
         current_value.assessor_comment = payload.assessor_comment
+        if next_assessor_comment and next_assessor_comment != previous_assessor_comment:
+            append_assessment_comment(
+                db,
+                assessment_facility,
+                current_user,
+                next_assessor_comment,
+                indicator_id=payload.indicator_id,
+                comment_type=COMMENT_TYPE_INDICATOR,
+            )
         current_value.value_status = _compute_value_status(
             payload.register_value,
             payload.hmis105_value,
@@ -112,8 +135,17 @@ def update_general_assessment_comment(
     comment: str | None,
 ) -> AssessmentFacility:
     ensure_can_edit_assessment_workspace(assessment_facility, current_user)
-    normalized_comment = comment.strip() if isinstance(comment, str) and comment.strip() else None
+    previous_comment = _normalize_comment(assessment_facility.general_assessment_comment)
+    normalized_comment = _normalize_comment(comment)
     assessment_facility.general_assessment_comment = normalized_comment
+    if normalized_comment and normalized_comment != previous_comment:
+        append_assessment_comment(
+            db,
+            assessment_facility,
+            current_user,
+            normalized_comment,
+            comment_type=COMMENT_TYPE_GENERAL,
+        )
     _mark_draft_saved(assessment_facility)
     assessment_facility.updated_at = datetime.now(UTC)
     db.flush()

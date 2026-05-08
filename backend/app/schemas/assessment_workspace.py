@@ -71,6 +71,18 @@ class DqaValueResponse(BaseModel):
     updated_at: datetime
 
 
+class AssessmentCommentResponse(BaseModel):
+    id: UUID
+    assessment_facility_id: UUID
+    indicator_id: UUID | None
+    author_user_id: UUID | None
+    author_name: str | None
+    comment_type: str
+    comment_text: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class DqaValueUpsert(BaseModel):
     indicator_id: UUID
     register_value: int | None = None
@@ -155,6 +167,7 @@ class AssessmentWorkspaceResponse(BaseModel):
     facility: FacilityRead
     selected_indicators: list[SelectedIndicatorResponse]
     values: list[DqaValueResponse]
+    comments: list[AssessmentCommentResponse] = Field(default_factory=list)
     source_document_checks: list[SourceDocumentCheckResponse]
     source_document_requirements: list[SourceDocumentRequirementResponse]
     workspace_mode: Literal["EDIT", "READ_ONLY"]

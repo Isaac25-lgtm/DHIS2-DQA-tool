@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.assessment_facility import AssessmentFacility
 from app.models.assessment_facility_team_member import AssessmentFacilityTeamMember
+from app.models.assessment_comment import AssessmentComment
 from app.models.assessment_round import AssessmentRound
 from app.models.assessment_round_indicator import AssessmentRoundIndicator
 from app.models.dqa_value import DqaValue
@@ -23,6 +24,12 @@ from app.services.analytics_service import (
     get_indicator_analytics,
     get_source_document_analytics,
 )
+from app.services.assessment_comment_service import (
+    COMMENT_TYPE_GENERAL,
+    COMMENT_TYPE_INDICATOR,
+    format_comment_thread,
+    ordered_assessment_comments_for_list,
+)
 from app.services.comparison_service import get_comparison_results_for_assessment_facility
 from app.services.corrective_action_service import serialize_corrective_action
 from app.services.scoring_service import calculate_facility_score
@@ -35,6 +42,8 @@ def _assessment_facility_query():
             joinedload(AssessmentFacility.facility),
             joinedload(AssessmentFacility.assigned_assessor),
             selectinload(AssessmentFacility.dqa_values).joinedload(DqaValue.indicator),
+            selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.author),
+            selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.indicator),
             selectinload(AssessmentFacility.source_document_checks),
             selectinload(AssessmentFacility.corrective_actions)
             .joinedload(CorrectiveAction.indicator),
@@ -57,6 +66,8 @@ def _round_query():
             selectinload(AssessmentRound.selected_facilities).joinedload(AssessmentFacility.assigned_assessor),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.team_members).joinedload(AssessmentFacilityTeamMember.user),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.dqa_values).joinedload(DqaValue.indicator),
+            selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.author),
+            selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.indicator),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.source_document_checks),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.corrective_actions).joinedload(CorrectiveAction.indicator),
             selectinload(AssessmentRound.selected_facilities).selectinload(AssessmentFacility.corrective_actions).joinedload(CorrectiveAction.facility),
@@ -105,6 +116,7 @@ def _sanitize_comments(structured_input: dict, include_comments: bool) -> dict:
         for row in rows:
             current = dict(row)
             current.pop("assessor_comment", None)
+            current.pop("assessor_comments", None)
             current.pop("manager_comment", None)
             cleaned.append(current)
         return cleaned
@@ -164,6 +176,91 @@ def _serialize_source_document_checks(items) -> list[dict]:
 
 def _serialize_corrective_actions(actions: list[CorrectiveAction]) -> list[dict]:
     return [serialize_corrective_action(item).model_dump(mode="json") for item in sorted(actions, key=lambda action: action.created_at)]
+
+
+def _comment_entry(
+    comment: AssessmentComment,
+    assessment_facility: AssessmentFacility,
+    *,
+    assessment_round_name: str | None = None,
+) -> dict:
+    entry = {
+        "facility_name": assessment_facility.facility.facility_name,
+        "author_name": comment.author.full_name if comment.author else None,
+        "comment": comment.comment_text,
+        "created_at": comment.created_at.isoformat() if comment.created_at else None,
+    }
+    if assessment_round_name:
+        entry["assessment_round"] = assessment_round_name
+    if comment.indicator:
+        entry.update(
+            {
+                "indicator_id": str(comment.indicator_id) if comment.indicator_id else None,
+                "hmis_code": comment.indicator.hmis_code,
+                "indicator_name": comment.indicator.indicator_name,
+            }
+        )
+    return entry
+
+
+def _comments_for_scope(
+    assessment_facility: AssessmentFacility,
+    *,
+    comment_type: str,
+    indicator_id: UUID | None = None,
+) -> list[AssessmentComment]:
+    return ordered_assessment_comments_for_list(
+        [
+            comment
+            for comment in assessment_facility.comments
+            if comment.comment_type == comment_type and comment.indicator_id == indicator_id
+        ]
+    )
+
+
+def _general_comment_entries(
+    assessment_facility: AssessmentFacility,
+    *,
+    assessment_round_name: str | None = None,
+) -> list[dict]:
+    comments = _comments_for_scope(assessment_facility, comment_type=COMMENT_TYPE_GENERAL)
+    if comments:
+        return [
+            _comment_entry(comment, assessment_facility, assessment_round_name=assessment_round_name)
+            for comment in comments
+        ]
+    if not assessment_facility.general_assessment_comment:
+        return []
+    fallback = {
+        "facility_name": assessment_facility.facility.facility_name,
+        "comment": assessment_facility.general_assessment_comment,
+        "author_name": assessment_facility.assigned_assessor.full_name if assessment_facility.assigned_assessor else None,
+        "created_at": assessment_facility.updated_at.isoformat() if assessment_facility.updated_at else None,
+    }
+    if assessment_round_name:
+        fallback["assessment_round"] = assessment_round_name
+    return [fallback]
+
+
+def _augment_row_with_comment_thread(row: dict, assessment_facility: AssessmentFacility, indicator_id: UUID | None) -> dict:
+    comments = (
+        _comments_for_scope(
+            assessment_facility,
+            comment_type=COMMENT_TYPE_INDICATOR,
+            indicator_id=indicator_id,
+        )
+        if indicator_id
+        else []
+    )
+    joined_comments = format_comment_thread(comments)
+    return {
+        **row,
+        "assessor_comment": joined_comments or row.get("assessor_comment"),
+        "assessor_comments": [
+            _comment_entry(comment, assessment_facility)
+            for comment in comments
+        ],
+    }
 
 
 def _serialize_indicators(assessment_round: AssessmentRound) -> list[dict]:
@@ -239,6 +336,14 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
     comparison_results = get_comparison_results_for_assessment_facility(db, assessment_facility_id, current_user).model_dump(mode="json")
     facility_summary = get_assessment_facility_summary(db, assessment_facility_id, current_user).model_dump(mode="json")
     dqa_values = list(assessment_facility.dqa_values)
+    comparison_rows = [
+        _augment_row_with_comment_thread(
+            row,
+            assessment_facility,
+            UUID(row["indicator_id"]) if row.get("indicator_id") else None,
+        )
+        for row in comparison_results["comparison_rows"]
+    ]
     structured_input = {
         "report_scope": "facility",
         "assessment_round": {
@@ -272,7 +377,7 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
         "assessment_status": assessment_facility.status.value,
         "indicators_assessed": _serialize_indicators(assessment_facility.assessment_round),
         "comparison_summary": {
-            "total_rows_assessed": len(comparison_results["comparison_rows"]),
+            "total_rows_assessed": len(comparison_rows),
             "exact_matches": facility_summary["exact_count"],
             "within_5_percent": facility_summary["minor_count"],
             "flagged_above_5_percent": facility_summary["moderate_count"] + facility_summary["major_count"],
@@ -284,14 +389,14 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
         "dqa_score": facility_summary,
         "source_document_summary": comparison_results["source_document_summary"],
         "source_document_checks": _serialize_source_document_checks(assessment_facility.source_document_checks),
-        "comparison_rows": comparison_results["comparison_rows"],
+        "comparison_rows": comparison_rows,
         "major_discrepancies": [
             row
-            for row in comparison_results["comparison_rows"]
+            for row in comparison_rows
             if row.get("severity") in {"MAJOR", "CRITICAL", "MISSING"}
         ],
         "missing_value_issues": [
-            row for row in comparison_results["comparison_rows"] if row.get("severity") == "MISSING"
+            row for row in comparison_rows if row.get("severity") == "MISSING"
         ],
         "corrective_actions": _serialize_corrective_actions(list(assessment_facility.corrective_actions)),
         "dhis2_sync_summary": _build_dhis2_sync_summary(dqa_values),
@@ -305,11 +410,7 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
             }
             for item in sorted(assessment_facility.dqa_values, key=lambda value: value.indicator_id)
         ],
-        "general_facility_comments": (
-            [{"facility_name": assessment_facility.facility.facility_name, "comment": assessment_facility.general_assessment_comment}]
-            if include_comments and assessment_facility.general_assessment_comment
-            else []
-        ),
+        "general_facility_comments": _general_comment_entries(assessment_facility) if include_comments else [],
         "generated_timestamp": datetime.now(UTC).isoformat(),
         "include_comments": include_comments,
     }
@@ -370,9 +471,10 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
                 for value in (register_hmis_percent_diff, hmis_dhis2_percent_diff, register_dhis2_percent_diff)
                 if value is not None
             ]
+            row_with_comments = _augment_row_with_comment_thread(row, facility, indicator_id)
             comparison_rows.append(
                 {
-                    **row,
+                    **row_with_comments,
                     "facility_name": facility.facility.facility_name,
                     "district": facility.facility.district,
                     "team_lead": facility.assigned_assessor.full_name if facility.assigned_assessor else None,
@@ -390,10 +492,8 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
                     **_serialize_source_document_checks([item])[0],
                 }
             )
-        if include_comments and facility.general_assessment_comment:
-            general_facility_comments.append(
-                {"facility_name": facility.facility.facility_name, "comment": facility.general_assessment_comment}
-            )
+        if include_comments:
+            general_facility_comments.extend(_general_comment_entries(facility))
         if include_comments and facility.manager_comment:
             manager_comments.append({"facility_name": facility.facility.facility_name, "comment": facility.manager_comment})
 
@@ -589,9 +689,10 @@ def _submission_scope_report_data(
                 for value in (register_hmis_percent_diff, hmis_dhis2_percent_diff, register_dhis2_percent_diff)
                 if value is not None
             ]
+            row_with_comments = _augment_row_with_comment_thread(row, facility, indicator_id)
             comparison_rows.append(
                 {
-                    **row,
+                    **row_with_comments,
                     "assessment_round": facility.assessment_round.name,
                     "facility_name": facility.facility.facility_name,
                     "district": facility.facility.district,
@@ -611,13 +712,9 @@ def _submission_scope_report_data(
                     **_serialize_source_document_checks([item])[0],
                 }
             )
-        if include_comments and facility.general_assessment_comment:
-            general_facility_comments.append(
-                {
-                    "assessment_round": facility.assessment_round.name,
-                    "facility_name": facility.facility.facility_name,
-                    "comment": facility.general_assessment_comment,
-                }
+        if include_comments:
+            general_facility_comments.extend(
+                _general_comment_entries(facility, assessment_round_name=facility.assessment_round.name)
             )
         if include_comments and facility.manager_comment:
             manager_comments.append(

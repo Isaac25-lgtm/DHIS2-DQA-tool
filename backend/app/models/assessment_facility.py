@@ -89,4 +89,9 @@ class AssessmentFacility(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="assessment_facility",
         cascade="all, delete-orphan",
     )
+    comments = relationship(
+        "AssessmentComment",
+        back_populates="assessment_facility",
+        cascade="all, delete-orphan",
+    )
     reports = relationship("Report", back_populates="assessment_facility")

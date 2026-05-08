@@ -380,6 +380,18 @@ export interface DqaValue {
   updated_at: string;
 }
 
+export interface AssessmentComment {
+  id: string;
+  assessment_facility_id: string;
+  indicator_id: string | null;
+  author_user_id: string | null;
+  author_name: string | null;
+  comment_type: "GENERAL" | "INDICATOR" | string;
+  comment_text: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DqaValueInput {
   indicator_id: string;
   register_value: number | null;
@@ -416,6 +428,7 @@ export interface AssessmentWorkspace {
   facility: Facility;
   selected_indicators: SelectedIndicator[];
   values: DqaValue[];
+  comments: AssessmentComment[];
   source_document_checks: SourceDocumentCheck[];
   source_document_requirements: SourceDocumentRequirement[];
   workspace_mode: WorkspaceMode;

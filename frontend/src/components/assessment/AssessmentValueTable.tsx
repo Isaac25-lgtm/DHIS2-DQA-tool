@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { Badge } from "../ui/Badge";
 import { Input } from "../ui/Input";
-import type { DqaValue, SelectedIndicator } from "../../types";
+import { Textarea } from "../ui/Textarea";
+import type { AssessmentComment, DqaValue, SelectedIndicator } from "../../types";
 import {
   calculateDifferenceSummary,
   DifferenceFlagBadge,
@@ -68,6 +69,62 @@ function IndicatorSummary({ indicator, compact = false }: { indicator: SelectedI
         <MetadataLine label="Group" value={indicator.indicator_group} />
         <MetadataLine label="Combo" value={indicator.category_combo} />
       </div>
+    </div>
+  );
+}
+
+function formatCommentDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function CommentThread({ comments }: { comments: AssessmentComment[] }) {
+  if (!comments.length) {
+    return (
+      <p className="text-xs text-brand-muted">No assessor comments yet for this indicator.</p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {comments.map((comment) => (
+        <div key={comment.id} className="rounded-xl border border-brand-border bg-brand-surface/60 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-muted">
+            <span>{comment.author_name ?? "Assessor"}</span>
+            <span>{formatCommentDate(comment.created_at)}</span>
+          </div>
+          <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-brand-text">{comment.comment_text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function IndicatorCommentBox({
+  indicator,
+  value,
+  comments,
+  onChange,
+  disabled,
+}: {
+  indicator: SelectedIndicator;
+  value: DqaValue;
+  comments: AssessmentComment[];
+  onChange: (indicatorId: string, updates: Partial<DqaValue>) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="mt-3 rounded-[16px] border border-brand-border bg-white/80 p-3">
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-brand-muted">Assessor comments</p>
+      <CommentThread comments={comments} />
+      <Textarea
+        rows={2}
+        value={value.assessor_comment ?? ""}
+        onChange={(event) => onChange(indicator.indicator_id, { assessor_comment: event.target.value || null })}
+        disabled={disabled}
+        placeholder="Add your comment or revision for this indicator."
+        className="mt-3 text-sm"
+      />
     </div>
   );
 }
@@ -200,15 +257,27 @@ function fallbackValue(indicatorId: string): DqaValue {
 export function AssessmentValueTable({
   indicators,
   values,
+  comments = [],
   onChange,
   disabled,
 }: {
   indicators: SelectedIndicator[];
   values: DqaValue[];
+  comments?: AssessmentComment[];
   onChange: (indicatorId: string, updates: Partial<DqaValue>) => void;
   disabled: boolean;
 }) {
   const valueMap = useMemo(() => new Map(values.map((item) => [item.indicator_id, item])), [values]);
+  const commentsByIndicator = useMemo(() => {
+    const next = new Map<string, AssessmentComment[]>();
+    comments
+      .filter((comment) => comment.comment_type === "INDICATOR" && comment.indicator_id)
+      .forEach((comment) => {
+        const key = comment.indicator_id as string;
+        next.set(key, [...(next.get(key) ?? []), comment]);
+      });
+    return next;
+  }, [comments]);
 
   return (
     <div className="space-y-4">
@@ -271,6 +340,13 @@ export function AssessmentValueTable({
                 <tr key={indicator.id} className="divide-x divide-slate-300 transition hover:bg-brand-surface/70">
                   <td className="px-4 py-4 align-top">
                     <IndicatorSummary indicator={indicator} />
+                    <IndicatorCommentBox
+                      indicator={indicator}
+                      value={currentValue}
+                      comments={commentsByIndicator.get(indicator.indicator_id) ?? []}
+                      onChange={onChange}
+                      disabled={disabled}
+                    />
                   </td>
                   <td className="px-4 py-4 align-top">
                     <ValueCard
@@ -383,6 +459,13 @@ export function AssessmentValueTable({
                 <p><span className="font-semibold text-brand-navy">DHIS2 vs HMIS 105:</span> {formatPercentDiff(differenceSummary.hmisDhis2PercentDiff)}</p>
                 <p><span className="font-semibold text-brand-navy">DHIS2 vs Register:</span> {formatPercentDiff(differenceSummary.registerDhis2PercentDiff)}</p>
               </div>
+              <IndicatorCommentBox
+                indicator={indicator}
+                value={currentValue}
+                comments={commentsByIndicator.get(indicator.indicator_id) ?? []}
+                onChange={onChange}
+                disabled={disabled}
+              />
             </div>
           );
         })}

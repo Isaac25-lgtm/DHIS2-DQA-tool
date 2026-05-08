@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.models.assessment_facility import AssessmentFacility
 from app.models.assessment_facility_team_member import AssessmentFacilityTeamMember
+from app.models.assessment_comment import AssessmentComment
 from app.models.assessment_round import AssessmentRound
 from app.models.assessment_round_indicator import AssessmentRoundIndicator
 from app.models.base import AssessmentFacilityStatus, AssessmentTeamRole, SeverityLevel
@@ -23,6 +24,12 @@ from app.schemas.submissions import (
     SubmissionStatsResponse,
     SubmissionTeamLeadOptionResponse,
     SubmissionValueRowResponse,
+)
+from app.services.assessment_comment_service import (
+    COMMENT_TYPE_GENERAL,
+    COMMENT_TYPE_INDICATOR,
+    format_comment_thread,
+    ordered_assessment_comments_for_list,
 )
 from app.services.scoring_service import calculate_facility_score
 
@@ -42,6 +49,8 @@ def _assessment_facility_query():
             joinedload(AssessmentFacility.assessment_round).selectinload(AssessmentRound.selected_indicators).joinedload(AssessmentRoundIndicator.indicator),
             selectinload(AssessmentFacility.team_members).joinedload(AssessmentFacilityTeamMember.user),
             selectinload(AssessmentFacility.dqa_values).joinedload(DqaValue.indicator),
+            selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.author),
+            selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.indicator),
         )
     )
 
@@ -126,6 +135,35 @@ def _value_percentages(value: DqaValue | None) -> tuple[float | None, float | No
     return register_hmis, hmis_dhis2, register_dhis2, max(valid) if valid else None
 
 
+def _comments_for_scope(
+    assessment_facility: AssessmentFacility,
+    *,
+    comment_type: str,
+    indicator_id: UUID | None = None,
+) -> list[AssessmentComment]:
+    return ordered_assessment_comments_for_list(
+        [
+            comment
+            for comment in assessment_facility.comments
+            if comment.comment_type == comment_type and comment.indicator_id == indicator_id
+        ]
+    )
+
+
+def _general_comment_thread(assessment_facility: AssessmentFacility) -> str | None:
+    comments = _comments_for_scope(assessment_facility, comment_type=COMMENT_TYPE_GENERAL)
+    return format_comment_thread(comments) or assessment_facility.general_assessment_comment
+
+
+def _indicator_comment_thread(assessment_facility: AssessmentFacility, value: DqaValue | None, indicator_id: UUID) -> str | None:
+    comments = _comments_for_scope(
+        assessment_facility,
+        comment_type=COMMENT_TYPE_INDICATOR,
+        indicator_id=indicator_id,
+    )
+    return format_comment_thread(comments) or (value.assessor_comment if value else None)
+
+
 def _live_flag_for_value(value: DqaValue | None) -> str:
     if value is None or value.register_value is None or value.hmis105_value is None or value.dhis2_value_at_assessment is None:
         return "Incomplete"
@@ -198,7 +236,7 @@ def serialize_submission_item(assessment_facility: AssessmentFacility) -> Submis
         critical_rows=critical,
         dqa_score=float(score["score_percent"]),
         score_category=str(score["score_category"]),
-        general_assessment_comment=assessment_facility.general_assessment_comment,
+        general_assessment_comment=_general_comment_thread(assessment_facility),
     )
 
 
@@ -230,7 +268,7 @@ def _serialize_submission_rows(assessment_facility: AssessmentFacility) -> list[
                 severity=value.severity.value if value and value.severity else None,
                 flag=_flag_for_value(value),
                 comparison_notes=value.comparison_notes if value else None,
-                assessor_comment=value.assessor_comment if value else None,
+                assessor_comment=_indicator_comment_thread(assessment_facility, value, selected.indicator_id),
                 manager_comment=value.manager_comment if value else None,
             )
         )

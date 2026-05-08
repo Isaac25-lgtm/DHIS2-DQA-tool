@@ -1,6 +1,7 @@
 """Shared schema exports for the UCMB DQA platform."""
 
 from app.schemas.assessment_workspace import (
+    AssessmentCommentResponse,
     AssessmentWorkspaceResponse,
     Dhis2PullResponse,
     Dhis2ValueResponse,
@@ -53,6 +54,7 @@ from app.schemas.reports import (
 
 __all__ = [
     "AssessmentWorkspaceResponse",
+    "AssessmentCommentResponse",
     "AnalyticsSummaryResponse",
     "AssessmentComparisonResultsResponse",
     "AssessmentFacilityAnalyticsSummaryResponse",

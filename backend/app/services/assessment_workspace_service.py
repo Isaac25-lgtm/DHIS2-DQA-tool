@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.assessment_facility import AssessmentFacility
 from app.models.assessment_facility_team_member import AssessmentFacilityTeamMember
+from app.models.assessment_comment import AssessmentComment
 from app.models.assessment_round import AssessmentRound
 from app.models.assessment_round_indicator import AssessmentRoundIndicator
 from app.models.base import (
@@ -33,6 +34,7 @@ from app.schemas.assessment_workspace import (
 )
 from app.schemas.facility import FacilityRead
 from app.services.assessment_round_service import serialize_assessment_facility, serialize_selected_indicator
+from app.services.assessment_comment_service import ordered_assessment_comments, serialize_assessment_comment
 from app.services.assessment_team_service import can_user_enter_data, can_user_submit, is_user_on_assessment_team
 from app.services.dhis2_service import DHIS2_ERROR, DHIS2_NO_DATA, DHIS2_NOT_CONFIGURED, fetch_dhis2_values
 
@@ -53,6 +55,8 @@ def _workspace_query():
             joinedload(AssessmentFacility.reviewed_by),
             selectinload(AssessmentFacility.team_members).joinedload(AssessmentFacilityTeamMember.user),
             selectinload(AssessmentFacility.dqa_values),
+            selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.author),
+            selectinload(AssessmentFacility.comments).joinedload(AssessmentComment.indicator),
             selectinload(AssessmentFacility.source_document_checks),
             joinedload(AssessmentFacility.assessment_round)
             .selectinload(AssessmentRound.selected_indicators)
@@ -171,6 +175,7 @@ def build_offline_cache_version(assessment_facility: AssessmentFacility) -> str:
         assessment_facility.updated_at,
         assessment_facility.assessment_round.updated_at,
         *(value.updated_at for value in assessment_facility.dqa_values),
+        *(value.updated_at for value in assessment_facility.comments),
         *(value.updated_at for value in assessment_facility.source_document_checks),
     ]
     latest_timestamp = max(timestamps)
@@ -387,6 +392,7 @@ def build_assessment_workspace_response(
         facility=FacilityRead.model_validate(assessment_facility.facility),
         selected_indicators=[serialize_selected_indicator(item) for item in _ordered_selected_indicators(assessment_facility)],
         values=[serialize_dqa_value(value) for value in ordered_values],
+        comments=[serialize_assessment_comment(item) for item in ordered_assessment_comments(assessment_facility)],
         source_document_checks=[
             serialize_source_document_check(item)
             for item in sorted(assessment_facility.source_document_checks, key=lambda value: value.source_document_name.lower())
