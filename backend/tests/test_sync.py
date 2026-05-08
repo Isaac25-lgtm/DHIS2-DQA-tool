@@ -287,7 +287,7 @@ def test_submit_final_through_sync_fails_cleanly_if_required_values_missing(
     assert response.status_code == 409
 
 
-def test_submitted_assessment_cannot_be_synced_again(
+def test_submitted_assessment_can_be_synced_again(
     client,
     db_session,
     manager_token,
@@ -344,5 +344,10 @@ def test_submitted_assessment_cannot_be_synced_again(
             "submit_final": False,
         },
     )
-    assert second_response.status_code == 409
+    assert second_response.status_code == 200
+    db_session.expire_all()
+    value = db_session.query(DqaValue).filter_by(assessment_facility_id=assessment_facility_id).one()
+    assert value.register_value == 101
+    assert value.hmis105_value == 101
+    assert value.assessment_facility.status == AssessmentFacilityStatus.SUBMITTED
     assert db_session.query(SyncLog).filter_by(assessment_facility_id=assessment_facility_id).count() >= 1

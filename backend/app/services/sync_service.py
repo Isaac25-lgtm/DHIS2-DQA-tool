@@ -31,11 +31,6 @@ def sync_assessment_draft(
 ) -> SyncAssessmentDraftResponse:
     assessment_facility = get_assessment_facility_for_workspace(db, payload.assessment_facility_id)
 
-    if assessment_facility.status == AssessmentFacilityStatus.SUBMITTED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This assessment has already been submitted and cannot be synced again.",
-        )
     if assessment_facility.status == AssessmentFacilityStatus.CLOSED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

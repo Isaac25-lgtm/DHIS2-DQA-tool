@@ -824,8 +824,9 @@ def test_submit_assessment_updates_status(
     assert saved_status.assessment_facility.status == AssessmentFacilityStatus.SUBMITTED
 
 
-def test_submitted_assessments_cannot_be_edited(
+def test_submitted_assessments_can_be_revised(
     client,
+    db_session,
     manager_token,
     assessor_token,
     active_facility,
@@ -931,10 +932,15 @@ def test_submitted_assessments_cannot_be_edited(
                     "indicator_id": str(active_indicator.id),
                     "register_value": 101,
                     "hmis105_value": 99,
-                    "assessor_comment": "Should fail",
+                    "assessor_comment": "Revision after first submission",
                 }
             ]
         },
     )
 
-    assert response.status_code == 409
+    assert response.status_code == 200
+    db_session.expire_all()
+    saved_value = db_session.query(DqaValue).filter_by(assessment_facility_id=assessment_facility_id).one()
+    assert saved_value.register_value == 101
+    assert saved_value.hmis105_value == 99
+    assert saved_value.assessment_facility.status == AssessmentFacilityStatus.SUBMITTED

@@ -38,8 +38,6 @@ from app.services.dhis2_service import DHIS2_ERROR, DHIS2_NO_DATA, DHIS2_NOT_CON
 
 
 READ_ONLY_STATUSES = {
-    AssessmentFacilityStatus.SUBMITTED,
-    AssessmentFacilityStatus.UNDER_REVIEW,
     AssessmentFacilityStatus.APPROVED,
     AssessmentFacilityStatus.CLOSED,
 }

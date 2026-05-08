@@ -63,6 +63,17 @@ export interface User extends AuthUser {
   updated_at: string;
 }
 
+export interface ManagerNotification {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  description: string;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  created_at: string;
+}
+
 export interface UserFormPayload {
   full_name: string;
   email: string;

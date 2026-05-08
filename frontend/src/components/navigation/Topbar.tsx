@@ -1,6 +1,6 @@
 import { Bell, LogOut, Moon, ShieldCheck, Sun, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { useTheme } from "../../hooks/useTheme";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
@@ -9,6 +9,8 @@ import {
   getFailedSyncCount,
   getPendingSyncCount,
 } from "../../services/offlineStore";
+import { notificationService } from "../../services/notificationService";
+import type { ManagerNotification } from "../../types";
 import { BrandLogo } from "../ui/BrandLogo";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -28,6 +30,34 @@ const pageTitles: Record<string, string> = {
   "/settings": "Settings",
 };
 
+function notificationLabel(action: string) {
+  const labels: Record<string, string> = {
+    assessment_workspace_opened: "Opened workspace",
+    assessment_draft_values_saved: "Saved values",
+    source_document_checks_saved: "Saved source documents",
+    general_assessment_comment_saved: "Saved facility comment",
+    assessment_draft_synced: "Synced draft",
+    assessment_duplicate_sync_batch_received: "Repeated sync",
+    assessment_draft_sync_failed: "Sync failed",
+    assessment_submitted: "Sent to manager",
+  };
+  return labels[action] ?? action.replace(/_/g, " ");
+}
+
+function relativeTime(value: string) {
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) {
+    return "";
+  }
+  const seconds = Math.max(Math.round((Date.now() - timestamp) / 1000), 0);
+  if (seconds < 60) return "Just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  return new Date(value).toLocaleDateString();
+}
+
 export function Topbar() {
   const location = useLocation();
   const { user, logout } = useAuth();
@@ -35,6 +65,8 @@ export function Topbar() {
   const { isOnline } = useNetworkStatus();
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [failedSyncCount, setFailedSyncCount] = useState(0);
+  const [notifications, setNotifications] = useState<ManagerNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const currentTitle =
     Object.entries(pageTitles).find(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`))?.[1] ??
     "UCMB HMIS 105 DQA";
@@ -52,6 +84,24 @@ export function Topbar() {
     window.addEventListener(OFFLINE_STORE_EVENT, handler);
     return () => window.removeEventListener(OFFLINE_STORE_EVENT, handler);
   }, []);
+
+  useEffect(() => {
+    if (user?.role !== "MANAGER") {
+      setNotifications([]);
+      return;
+    }
+
+    const refreshNotifications = async () => {
+      const data = await notificationService.listManagerNotifications(12).catch(() => []);
+      setNotifications(data);
+    };
+
+    void refreshNotifications();
+    const intervalId = window.setInterval(() => {
+      void refreshNotifications();
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [user?.role]);
 
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-brand-navy text-white shadow-panel">
@@ -88,9 +138,51 @@ export function Topbar() {
             {theme === "day" ? <Moon size={16} /> : <Sun size={16} />}
             {theme === "day" ? "Night mode" : "Day mode"}
           </Button>
-          <button className="rounded-2xl border border-white/10 bg-white/10 p-3 text-white/75 shadow-sm transition hover:bg-white/20 hover:text-white">
-            <Bell size={18} />
-          </button>
+          {user?.role === "MANAGER" ? (
+            <div className="relative">
+              <button
+                type="button"
+                className="relative rounded-2xl border border-white/10 bg-white/10 p-3 text-white/75 shadow-sm transition hover:bg-white/20 hover:text-white"
+                onClick={() => setNotificationsOpen((value) => !value)}
+                aria-label="Manager notifications"
+              >
+                <Bell size={18} />
+                {notifications.length > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-danger px-1 text-[10px] font-bold text-white">
+                    {Math.min(notifications.length, 9)}
+                  </span>
+                ) : null}
+              </button>
+              {notificationsOpen ? (
+                <div className="absolute right-0 top-14 z-50 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-brand-border bg-white text-brand-text shadow-panel">
+                  <div className="border-b border-brand-border bg-brand-surface px-4 py-3">
+                    <p className="text-sm font-bold text-brand-navy">Assessor activity</p>
+                    <p className="mt-1 text-xs text-brand-muted">Latest saves, syncs, and submissions.</p>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <p className="px-4 py-5 text-sm text-brand-muted">No assessor activity yet.</p>
+                    ) : (
+                      notifications.map((item) => (
+                        <Link
+                          key={item.id}
+                          to={item.entity_id ? `/assessment-facilities/${item.entity_id}/workspace` : "/submissions"}
+                          className="block border-b border-brand-border px-4 py-3 transition hover:bg-brand-surface"
+                          onClick={() => setNotificationsOpen(false)}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-sm font-semibold text-brand-text">{notificationLabel(item.action)}</p>
+                            <span className="shrink-0 text-[11px] text-brand-muted">{relativeTime(item.created_at)}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-brand-muted">{item.actor_name ?? "Assessor"} - {item.description}</p>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/8 px-3 py-2 shadow-sm">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-teal text-sm font-bold text-white">
               {(user?.full_name ?? "U")
