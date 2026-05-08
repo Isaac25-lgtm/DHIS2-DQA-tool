@@ -98,14 +98,18 @@ export function Topbar() {
     }
 
     const notificationsToShow = notifications;
+    if (notificationsToShow.length === 0) {
+      setNotificationsOpen(false);
+      setOpenPanelNotifications([]);
+      return;
+    }
+
     setOpenPanelNotifications(notificationsToShow);
     setNotificationsOpen(true);
-    if (notificationsToShow.length > 0) {
-      setNotifications([]);
-      void notificationService
-        .markManagerNotificationsSeen(notificationsToShow.map((item) => item.id))
-        .catch(() => undefined);
-    }
+    setNotifications([]);
+    void notificationService
+      .markManagerNotificationsSeen(notificationsToShow.map((item) => item.id))
+      .catch(() => undefined);
   };
 
   return (
