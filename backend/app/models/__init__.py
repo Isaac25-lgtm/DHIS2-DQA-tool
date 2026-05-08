@@ -12,6 +12,7 @@ from app.models.dqa_value import DqaValue
 from app.models.export_log import ExportLog
 from app.models.facility import Facility
 from app.models.indicator import Indicator
+from app.models.manager_notification_read import ManagerNotificationRead
 from app.models.report import Report
 from app.models.source_document_check import SourceDocumentCheck
 from app.models.source_document_requirement import SourceDocumentRequirement
@@ -32,6 +33,7 @@ __all__ = [
     "ExportLog",
     "Facility",
     "Indicator",
+    "ManagerNotificationRead",
     "Report",
     "SourceDocumentCheck",
     "SourceDocumentRequirement",

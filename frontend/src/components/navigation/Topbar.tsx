@@ -30,20 +30,6 @@ const pageTitles: Record<string, string> = {
   "/settings": "Settings",
 };
 
-function notificationLabel(action: string) {
-  const labels: Record<string, string> = {
-    assessment_workspace_opened: "Opened workspace",
-    assessment_draft_values_saved: "Saved values",
-    source_document_checks_saved: "Saved source documents",
-    general_assessment_comment_saved: "Saved facility comment",
-    assessment_draft_synced: "Synced draft",
-    assessment_duplicate_sync_batch_received: "Repeated sync",
-    assessment_draft_sync_failed: "Sync failed",
-    assessment_submitted: "Sent to manager",
-  };
-  return labels[action] ?? action.replace(/_/g, " ");
-}
-
 function relativeTime(value: string) {
   const timestamp = new Date(value).getTime();
   if (Number.isNaN(timestamp)) {
@@ -66,6 +52,7 @@ export function Topbar() {
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [failedSyncCount, setFailedSyncCount] = useState(0);
   const [notifications, setNotifications] = useState<ManagerNotification[]>([]);
+  const [openPanelNotifications, setOpenPanelNotifications] = useState<ManagerNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const currentTitle =
     Object.entries(pageTitles).find(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`))?.[1] ??
@@ -102,6 +89,24 @@ export function Topbar() {
     }, 30000);
     return () => window.clearInterval(intervalId);
   }, [user?.role]);
+
+  const handleNotificationBellClick = () => {
+    if (notificationsOpen) {
+      setNotificationsOpen(false);
+      setOpenPanelNotifications([]);
+      return;
+    }
+
+    const notificationsToShow = notifications;
+    setOpenPanelNotifications(notificationsToShow);
+    setNotificationsOpen(true);
+    if (notificationsToShow.length > 0) {
+      setNotifications([]);
+      void notificationService
+        .markManagerNotificationsSeen(notificationsToShow.map((item) => item.id))
+        .catch(() => undefined);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-20 border-b border-white/10 bg-brand-navy text-white shadow-panel">
@@ -143,7 +148,7 @@ export function Topbar() {
               <button
                 type="button"
                 className="relative rounded-2xl border border-white/10 bg-white/10 p-3 text-white/75 shadow-sm transition hover:bg-white/20 hover:text-white"
-                onClick={() => setNotificationsOpen((value) => !value)}
+                onClick={handleNotificationBellClick}
                 aria-label="Manager notifications"
               >
                 <Bell size={18} />
@@ -157,13 +162,13 @@ export function Topbar() {
                 <div className="absolute right-0 top-14 z-50 w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-brand-border bg-white text-brand-text shadow-panel">
                   <div className="border-b border-brand-border bg-brand-surface px-4 py-3">
                     <p className="text-sm font-bold text-brand-navy">Assessor activity</p>
-                    <p className="mt-1 text-xs text-brand-muted">Latest saves, syncs, and submissions.</p>
+                    <p className="mt-1 text-xs text-brand-muted">New assessor updates. Opening this panel marks them as seen.</p>
                   </div>
                   <div className="max-h-96 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <p className="px-4 py-5 text-sm text-brand-muted">No assessor activity yet.</p>
+                    {openPanelNotifications.length === 0 ? (
+                      <p className="px-4 py-5 text-sm text-brand-muted">No new assessor activity.</p>
                     ) : (
-                      notifications.map((item) => (
+                      openPanelNotifications.map((item) => (
                         <Link
                           key={item.id}
                           to={item.entity_id ? `/assessment-facilities/${item.entity_id}/workspace` : "/submissions"}
@@ -171,10 +176,10 @@ export function Topbar() {
                           onClick={() => setNotificationsOpen(false)}
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <p className="text-sm font-semibold text-brand-text">{notificationLabel(item.action)}</p>
+                            <p className="text-sm font-semibold text-brand-text">{item.title}</p>
                             <span className="shrink-0 text-[11px] text-brand-muted">{relativeTime(item.created_at)}</span>
                           </div>
-                          <p className="mt-1 text-xs text-brand-muted">{item.actor_name ?? "Assessor"} - {item.description}</p>
+                          <p className="mt-1 text-xs text-brand-muted">{item.message}</p>
                         </Link>
                       ))
                     )}

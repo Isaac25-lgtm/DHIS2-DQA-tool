@@ -66,6 +66,8 @@ export interface User extends AuthUser {
 export interface ManagerNotification {
   id: string;
   action: string;
+  title: string;
+  message: string;
   entity_type: string;
   entity_id: string | null;
   description: string;
