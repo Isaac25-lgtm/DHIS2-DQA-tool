@@ -31,6 +31,7 @@ from app.services.assessment_comment_service import (
     ordered_assessment_comments_for_list,
 )
 from app.services.comparison_service import get_comparison_results_for_assessment_facility
+from app.services.comparison_service import classify_dhis2_response_status
 from app.services.corrective_action_service import serialize_corrective_action
 from app.services.scoring_service import calculate_facility_score
 
@@ -298,18 +299,79 @@ def _serialize_scope_indicators(facilities: list[AssessmentFacility]) -> list[di
 
 
 def _build_dhis2_sync_summary(values: list[DqaValue]) -> dict:
-    statuses = [value.dhis2_api_status for value in values]
-    successful = sum(1 for status_value in statuses if status_value == "SUCCESS")
-    no_data = sum(1 for status_value in statuses if status_value == "NO_DATA")
-    errors = sum(1 for status_value in statuses if status_value in {"ERROR", "NOT_CONFIGURED"})
+    classifications = [classify_dhis2_response_status(value) for value in values]
+    successful = sum(1 for item in classifications if item in {"VALUE_RETURNED", "TRUE_ZERO"})
+    true_zero = sum(1 for item in classifications if item == "TRUE_ZERO")
+    no_data = sum(1 for item in classifications if item == "NO_DATA")
+    errors = sum(1 for item in classifications if item in {"SYNC_ERROR", "NOT_CONFIGURED"})
+    not_applicable = sum(1 for item in classifications if item == "NOT_APPLICABLE")
+    unknown = sum(1 for item in classifications if item == "UNKNOWN")
     extracted_times = [value.dhis2_extracted_at for value in values if value.dhis2_extracted_at]
     return {
         "dhis2_values_successfully_pulled": successful,
+        "dhis2_true_zero_count": true_zero,
         "dhis2_no_data_count": no_data,
         "dhis2_error_count": errors,
+        "dhis2_not_applicable_count": not_applicable,
+        "dhis2_unknown_count": unknown,
+        "response_classification": {
+            "VALUE_RETURNED": sum(1 for item in classifications if item == "VALUE_RETURNED"),
+            "TRUE_ZERO": true_zero,
+            "NO_DATA": no_data,
+            "SYNC_ERROR": sum(1 for item in classifications if item == "SYNC_ERROR"),
+            "NOT_APPLICABLE": not_applicable,
+            "UNKNOWN": unknown,
+        },
         "last_sync_time": max(extracted_times).isoformat() if extracted_times else None,
         "facilities_with_sync_errors": [],
     }
+
+
+def _gap_and_pattern(row: dict) -> tuple[int | None, str]:
+    values = [
+        row.get("register_value"),
+        row.get("hmis105_value"),
+        row.get("dhis2_value_at_assessment"),
+    ]
+    comparable = [int(value) for value in values if isinstance(value, int)]
+    gap = max(comparable) - min(comparable) if len(comparable) >= 2 else None
+    dhis2_status = row.get("dhis2_response_status")
+    if dhis2_status == "NO_DATA":
+        return gap, "DHIS2 no data"
+    if row.get("register_value") is None:
+        return gap, "Missing source value"
+    if row.get("register_value") == row.get("hmis105_value") and row.get("hmis105_value") != row.get("dhis2_value_at_assessment"):
+        return gap, "Register=HMIS 105, DHIS2 lower" if (row.get("dhis2_value_at_assessment") or 0) < (row.get("hmis105_value") or 0) else "Register=HMIS 105, DHIS2 differs"
+    if row.get("register_value") != row.get("hmis105_value") and row.get("hmis105_value") == row.get("dhis2_value_at_assessment"):
+        return gap, "Register higher than HMIS 105/DHIS2" if (row.get("register_value") or 0) > (row.get("hmis105_value") or 0) else "Register differs from HMIS 105/DHIS2"
+    if len(set(comparable)) >= 3:
+        return gap, "All three differ"
+    return gap, "Requires review"
+
+
+def _critical_chase_list(rows: list[dict]) -> list[dict]:
+    chase_rows = []
+    for row in rows:
+        if not (row.get("is_death_indicator") or row.get("severity") == "CRITICAL"):
+            continue
+        gap, pattern = _gap_and_pattern(row)
+        chase_rows.append(
+            {
+                "facility": row.get("facility_name"),
+                "administrative_area": row.get("administrative_area") or row.get("district"),
+                "indicator": row.get("indicator_name"),
+                "hmis_code": row.get("hmis_code"),
+                "register_value": row.get("register_value"),
+                "hmis105_value": row.get("hmis105_value"),
+                "dhis2_value": row.get("dhis2_value_at_assessment"),
+                "gap": gap,
+                "pattern": pattern,
+                "owner_role": "Facility In-charge",
+                "proposed_target_date": "Within 30 days of report approval",
+                "evidence_required_for_closure": "Signed reconciliation note, corrected DHIS2 screenshot or sync log, HMIS 105 correction note, MPDSR cross-check note where applicable, and facility in-charge sign-off.",
+            }
+        )
+    return chase_rows
 
 
 def _completion_percent(assessed: int, selected: int) -> float:
@@ -344,6 +406,9 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
         )
         for row in comparison_results["comparison_rows"]
     ]
+    for row in comparison_rows:
+        row["facility_name"] = assessment_facility.facility.facility_name
+        row["administrative_area"] = assessment_facility.facility.district
     structured_input = {
         "report_scope": "facility",
         "assessment_round": {
@@ -365,12 +430,14 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
             "facilities_pending": 0,
             "percentage_completed": 100.0,
             "districts_covered": [assessment_facility.facility.district],
+            "administrative_areas_covered": [assessment_facility.facility.district],
             "facility_types": [assessment_facility.facility.facility_type],
         },
         "facility": {
             "id": str(assessment_facility.facility.id),
             "facility_name": assessment_facility.facility.facility_name,
             "district": assessment_facility.facility.district,
+            "administrative_area": assessment_facility.facility.district,
             "facility_type": assessment_facility.facility.facility_type,
             "ownership": assessment_facility.facility.ownership,
         },
@@ -388,6 +455,7 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
         },
         "dqa_score": facility_summary,
         "source_document_summary": comparison_results["source_document_summary"],
+        "source_document_assessment_status": "ASSESSED" if assessment_facility.source_document_checks else "NOT_ASSESSED",
         "source_document_checks": _serialize_source_document_checks(assessment_facility.source_document_checks),
         "comparison_rows": comparison_rows,
         "major_discrepancies": [
@@ -400,11 +468,13 @@ def _facility_report_data(db: Session, assessment_facility_id: UUID, include_com
         ],
         "corrective_actions": _serialize_corrective_actions(list(assessment_facility.corrective_actions)),
         "dhis2_sync_summary": _build_dhis2_sync_summary(dqa_values),
+        "critical_chase_list": _critical_chase_list(comparison_rows),
         "dhis2_extraction_metadata": [
             {
                 "indicator_id": str(item.indicator_id),
                 "dhis2_value_at_assessment": item.dhis2_value_at_assessment,
                 "dhis2_api_status": item.dhis2_api_status,
+                "dhis2_response_status": classify_dhis2_response_status(item),
                 "dhis2_extracted_at": item.dhis2_extracted_at.isoformat() if item.dhis2_extracted_at else None,
                 "dhis2_error_message": item.dhis2_error_message,
             }
@@ -477,6 +547,7 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
                     **row_with_comments,
                     "facility_name": facility.facility.facility_name,
                     "district": facility.facility.district,
+                    "administrative_area": facility.facility.district,
                     "team_lead": facility.assigned_assessor.full_name if facility.assigned_assessor else None,
                     "source_register": selected.indicator.source_register if selected else None,
                     "register_hmis_percent_diff": register_hmis_percent_diff,
@@ -517,6 +588,7 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
             "facilities_pending": max(len(assessment_round.selected_facilities) - len(assessed_facilities), 0),
             "percentage_completed": _completion_percent(len(assessed_facilities), len(assessment_round.selected_facilities)),
             "districts_covered": districts,
+            "administrative_areas_covered": districts,
             "facility_types": facility_types,
         },
         "teams": teams,
@@ -525,12 +597,14 @@ def _consolidated_report_data(db: Session, assessment_round_id: UUID, include_co
         "facility_score_ranking": facility_analytics,
         "indicator_findings": indicator_analytics,
         "source_document_completeness": source_document_analytics,
+        "source_document_assessment_status": "ASSESSED" if source_document_checks else "NOT_ASSESSED",
         "source_document_checks": source_document_checks,
         "comparison_rows": comparison_rows,
         "general_facility_comments": general_facility_comments,
         "manager_comments": manager_comments,
         "corrective_actions": corrective_actions,
         "dhis2_sync_summary": _build_dhis2_sync_summary(all_dqa_values),
+        "critical_chase_list": _critical_chase_list(comparison_rows),
         "generated_timestamp": datetime.now(UTC).isoformat(),
         "include_comments": include_comments,
     }
@@ -696,6 +770,7 @@ def _submission_scope_report_data(
                     "assessment_round": facility.assessment_round.name,
                     "facility_name": facility.facility.facility_name,
                     "district": facility.facility.district,
+                    "administrative_area": facility.facility.district,
                     "team_lead": lead_member.user.full_name if lead_member and lead_member.user else None,
                     "source_register": selected.indicator.source_register if selected else None,
                     "register_hmis_percent_diff": register_hmis_percent_diff,
@@ -761,7 +836,7 @@ def _submission_scope_report_data(
     source_document_completeness_rate = (
         round(sum(item["completeness_rate"] for item in source_document_analytics) / len(source_document_analytics), 1)
         if source_document_analytics
-        else 0.0
+        else None
     )
     scope_label = "All submitted assessments"
     if assessment_round_id and rounds:
@@ -787,6 +862,7 @@ def _submission_scope_report_data(
             "assessment_round": item["facility"].assessment_round.name,
             "facility_name": item["facility"].facility.facility_name,
             "district": item["facility"].facility.district,
+            "administrative_area": item["facility"].facility.district,
             "team_lead": (_team_lead_member(item["facility"]).user.full_name if _team_lead_member(item["facility"]) and _team_lead_member(item["facility"]).user else None),
             "dqa_score": item["score"]["score_percent"],
             "score_category": item["score"]["score_category"],
@@ -820,6 +896,7 @@ def _submission_scope_report_data(
             "facilities_pending": max(len(scoped_facilities) - len(submitted_facilities), 0),
             "percentage_completed": _completion_percent(len(submitted_facilities), len(scoped_facilities)),
             "districts_covered": sorted({facility.facility.district for facility in submitted_facilities}),
+            "administrative_areas_covered": sorted({facility.facility.district for facility in submitted_facilities}),
             "facility_types": sorted({facility.facility.facility_type for facility in submitted_facilities}),
         },
         "teams": teams,
@@ -838,12 +915,14 @@ def _submission_scope_report_data(
         "facility_score_ranking": facility_score_ranking,
         "indicator_findings": indicator_findings,
         "source_document_completeness": source_document_analytics,
+        "source_document_assessment_status": "ASSESSED" if source_document_checks else "NOT_ASSESSED",
         "source_document_checks": source_document_checks,
         "comparison_rows": comparison_rows,
         "general_facility_comments": general_facility_comments,
         "manager_comments": manager_comments,
         "corrective_actions": corrective_actions,
         "dhis2_sync_summary": _build_dhis2_sync_summary(submitted_values),
+        "critical_chase_list": _critical_chase_list(comparison_rows),
         "generated_timestamp": datetime.now(UTC).isoformat(),
         "include_comments": include_comments,
         "major_cross_facility_issues": indicator_findings[:5],

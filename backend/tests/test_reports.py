@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from io import BytesIO
 from uuid import UUID
 
+from docx import Document
+from openpyxl import load_workbook
+
 from app.models.ai_generation_log import AiGenerationLog
+from app.models.base import ReportStatus, ReportType
 from app.models.dqa_value import DqaValue
 from app.models.export_log import ExportLog
 from app.models.report import Report
+from app.services.export_service import export_report_docx, export_report_xlsx
 
 
 def _create_published_assignment(client, manager_token: str, facility_id: str, indicator_id: str, assessor_id: str) -> tuple[str, str]:
@@ -142,7 +148,10 @@ def test_report_generation_uses_template_fallback_without_ai_api_key(
         json={"assessment_facility_id": assessment_facility_id, "report_type": "FACILITY_DQA_REPORT", "include_comments": False},
     )
     assert response.status_code == 200
-    assert "Overall Data Quality Summary" in response.json()["generated_content"]
+    body = response.json()
+    assert "Main Findings" in body["generated_content"]
+    assert body["structured_input_json"]["source_document_assessment_status"] == "NOT_ASSESSED"
+    assert body["structured_input_json"]["finding_blocks"]["findings"][0]["evidence_required_for_closure"]
 
 
 def test_ai_payload_excludes_comments_by_default(
@@ -362,3 +371,120 @@ def test_ai_generation_log_is_saved(
     assert response.status_code == 200
     report_id = UUID(response.json()["id"])
     assert db_session.query(AiGenerationLog).filter_by(report_id=report_id).count() == 1
+
+
+def test_docx_finding_block_export_has_no_narrative_report_section(db_session, seeded_manager) -> None:
+    structured = {
+        "coverage": {"facilities_assessed": 1, "total_facilities_selected": 1, "administrative_areas_covered": ["Area A"]},
+        "dqa_score": {"score_percent": 60, "exact_count": 0, "minor_count": 0, "moderate_count": 0, "major_count": 1, "critical_count": 1, "missing_count": 0},
+        "source_document_assessment_status": "NOT_ASSESSED",
+        "dhis2_sync_summary": {"response_classification": {"NO_DATA": 1, "TRUE_ZERO": 0, "VALUE_RETURNED": 0, "SYNC_ERROR": 0, "NOT_APPLICABLE": 0, "UNKNOWN": 0}},
+        "critical_chase_list": [
+            {
+                "facility": "Facility A",
+                "administrative_area": "Area A",
+                "indicator": "Newborn deaths",
+                "hmis_code": "105-MA13",
+                "register_value": 1,
+                "hmis105_value": 1,
+                "dhis2_value": None,
+                "gap": 0,
+                "pattern": "DHIS2 no data",
+                "owner_role": "Facility In-charge",
+                "proposed_target_date": "Within 30 days of report approval",
+                "evidence_required_for_closure": "MPDSR cross-check note.",
+            }
+        ],
+        "finding_blocks": {
+            "executive_snapshot": {"headline": "Snapshot", "primary_finding": "Primary.", "management_implication": "Implication.", "urgent_actions": []},
+            "scope_and_method": {"scope_summary": "Scope.", "method_summary": "Method.", "denominator_note": "Denominator.", "severity_note": "Severity."},
+            "critical_chase_list_intro": "Chase critical rows.",
+            "findings": [
+                {
+                    "finding_number": 1,
+                    "finding_title": "DHIS2 no-data responses require separate investigation",
+                    "finding_category": "DHIS2 synchronization",
+                    "evidence": "One no-data row.",
+                    "interpretation": "No-data is not zero.",
+                    "affected_facilities": ["Facility A"],
+                    "affected_indicators": ["Newborn deaths"],
+                    "affected_administrative_areas": ["Area A"],
+                    "risk_level": "Critical",
+                    "implication": "Requires reconciliation.",
+                    "required_action": "Verify DHIS2.",
+                    "owner_role": "MoH DHIS2 Team",
+                    "proposed_timeline": "Within 30 days",
+                    "evidence_required_for_closure": "DHIS2 screenshot.",
+                }
+            ],
+            "dhis2_no_data_review": {"summary": "No-data review.", "interpretation": "Verify.", "required_platform_fix": "Show status."},
+            "source_document_review": {"summary": "Source document quality was not fully measured in this round.", "interpretation": "Not assessed.", "next_round_requirement": "Add checklist."},
+            "facility_performance_summary": {"summary": "Facility summary."},
+            "indicator_performance_summary": {"summary": "Indicator summary."},
+            "corrective_action_plan": {"summary": "Action summary.", "actions": []},
+            "limitations": ["Not assessed"],
+            "next_round_improvements": ["Add checklist"],
+            "conclusion": "Conclusion.",
+        },
+    }
+    report = Report(
+        report_type=ReportType.CONSOLIDATED_UCMB_DQA_REPORT,
+        title="Finding Block Export Test",
+        status=ReportStatus.GENERATED,
+        generated_content="Finding block content",
+        final_content="Finding block content",
+        structured_input_json=structured,
+        prompt_version="v4-finding-blocks-blended-report",
+        generated_by_user_id=seeded_manager.id,
+    )
+    db_session.add(report)
+    db_session.commit()
+    db_session.refresh(report)
+
+    _, content, _ = export_report_docx(db_session, report, seeded_manager)
+    document = Document(BytesIO(content))
+    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    assert "Narrative Report" not in text
+    assert "Executive Snapshot" in text
+    assert "Critical Chase List" in text
+    assert "Administrative area" in text
+
+
+def test_xlsx_export_includes_analytical_workbook_sheets(db_session, seeded_manager) -> None:
+    structured = {
+        "finding_blocks": {"corrective_action_plan": {"actions": []}},
+        "dqa_score": {"score_percent": 80, "critical_count": 0},
+        "summary": {},
+        "dhis2_sync_summary": {"response_classification": {"NO_DATA": 0}},
+        "source_document_assessment_status": "NOT_ASSESSED",
+        "comparison_rows": [],
+        "critical_chase_list": [],
+    }
+    report = Report(
+        report_type=ReportType.EXECUTIVE_SUMMARY,
+        title="Analytical Workbook Test",
+        status=ReportStatus.APPROVED,
+        generated_content="Content",
+        final_content="Content",
+        structured_input_json=structured,
+        prompt_version="v4-finding-blocks-blended-report",
+        generated_by_user_id=seeded_manager.id,
+    )
+    db_session.add(report)
+    db_session.commit()
+    db_session.refresh(report)
+
+    _, content, _ = export_report_xlsx(db_session, report, seeded_manager)
+    workbook = load_workbook(BytesIO(content))
+    assert {
+        "Executive Dashboard",
+        "Facility Ranking",
+        "Indicator Ranking",
+        "Critical Chase List",
+        "Corrective Action Tracker",
+        "DHIS2 Sync Audit",
+        "Source Document Checklist",
+        "Submitted Data",
+        "Field Comments",
+        "Data Dictionary",
+    }.issubset(set(workbook.sheetnames))

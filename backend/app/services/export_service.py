@@ -340,7 +340,7 @@ def _chart_severity_distribution(structured: dict) -> BytesIO | None:
 
 
 def _chart_completion_rates(structured: dict) -> BytesIO | None:
-    """Bar chart: completion rates per district or facility type."""
+    """Bar chart: completion rates for the assessment scope."""
     coverage = structured.get("coverage") or {}
     districts = coverage.get("districts_covered") or []
     if not districts:
@@ -593,12 +593,16 @@ def _add_cover_page(document: Document, report: Report, facility_count: int) -> 
     _add_paragraph_spacing(toc_heading, before_pt=12, after_pt=6)
 
     toc_sections = [
-        "1. Executive Summary",
-        "2. Statistical Dashboard",
-        "3. Key Findings",
-        "4. Field Notes & Context",
-        "5. Recommendations & Corrective Actions",
-        "6. Narrative Report",
+        "1. Executive Snapshot",
+        "2. Critical Chase List",
+        "3. Scope and Method",
+        "4. Main Findings",
+        "5. Facility Performance",
+        "6. Indicator Performance",
+        "7. DHIS2 No-Data Review",
+        "8. Source Document Review",
+        "9. Corrective Action Plan",
+        "10. Limitations and Appendix Notes",
     ]
     if facility_count > 1:
         toc_sections.insert(3, "3a. Facility Performance Details")
@@ -711,7 +715,7 @@ def _add_metric_boxes(document: Document, report: Report) -> None:
     """Row of coloured summary metric cards."""
     structured = report.structured_input_json or {}
 
-    document.add_heading("Executive Summary", level=1)
+    document.add_heading("Executive Snapshot Metrics", level=1)
 
     cards: list[tuple[str, object, float | None]] = []
 
@@ -748,7 +752,7 @@ def _add_metric_boxes(document: Document, report: Report) -> None:
     intro_run = intro_p.add_run(
         f"This report presents findings from the HMIS 105 Data Quality Assessment "
         f"covering {facility_count} health {'facilities' if facility_count > 1 else 'facility'}. "
-        f"The assessment compares data across paper registers, HMIS 105 reports, and DHIS2 entries "
+        f"The assessment compares the source register count used as the primary verification reference, HMIS 105 reports, and DHIS2 entries "
         f"to identify discrepancies and recommend corrective actions."
     )
     intro_run.font.size = Pt(10)
@@ -935,12 +939,13 @@ def _build_field_notes_section(document: Document, structured: dict, facility_co
         context_lines = []
         if round_data.get("reporting_period"):
             context_lines.append(f"Assessment conducted for reporting period: {round_data['reporting_period']}.")
-        if facility_data.get("district"):
-            context_lines.append(f"Facility located in {facility_data['district']} district.")
+        if facility_data.get("administrative_area") or facility_data.get("district"):
+            context_lines.append(f"Facility administrative area: {facility_data.get('administrative_area') or facility_data['district']}.")
         if facility_data.get("facility_type"):
             context_lines.append(f"Facility type: {facility_data['facility_type']}.")
-        if coverage.get("districts_covered"):
-            context_lines.append(f"Districts covered: {', '.join(coverage['districts_covered'])}.")
+        if coverage.get("administrative_areas_covered") or coverage.get("districts_covered"):
+            areas = coverage.get("administrative_areas_covered") or coverage["districts_covered"]
+            context_lines.append(f"Administrative areas covered: {', '.join(areas)}.")
         if coverage.get("facility_types"):
             context_lines.append(f"Facility types assessed: {', '.join(coverage['facility_types'])}.")
         if facility_data.get("ownership"):
@@ -1170,7 +1175,7 @@ def _build_recommendations_section(document: Document, structured: dict, facilit
 
     # General recommendations
     recommendations.append(("MEDIUM", "Establish a regular (quarterly) DQA cycle to monitor progress on data quality improvements over time."))
-    recommendations.append(("MEDIUM", "Integrate DQA findings into the district health management team (DHMT) review meetings to ensure accountability."))
+    recommendations.append(("MEDIUM", "Integrate DQA findings into routine health management review meetings to ensure accountability."))
     recommendations.append(("LOW", "Document lessons learned from this assessment to inform future DQA rounds and refine the assessment methodology."))
 
     # Present recommendations
@@ -1293,7 +1298,7 @@ def _render_section_scope(document, structured, sections, facility_count):
                 ("Facilities assessed", coverage.get("facilities_assessed")),
                 ("Facilities pending", coverage.get("facilities_pending")),
                 ("Completion percent", coverage.get("percentage_completed")),
-                ("Districts covered", ", ".join(coverage.get("districts_covered") or [])),
+                ("Administrative areas covered", ", ".join(coverage.get("administrative_areas_covered") or coverage.get("districts_covered") or [])),
                 ("Facility types", ", ".join(coverage.get("facility_types") or [])),
             ],
         )
@@ -1599,7 +1604,7 @@ def _add_statistical_dashboard(document: Document, report: Report, facility_coun
                 ("Facilities assessed", coverage.get("facilities_assessed")),
                 ("Facilities pending", coverage.get("facilities_pending")),
                 ("Completion percent", coverage.get("percentage_completed")),
-                ("Districts covered", ", ".join(coverage.get("districts_covered") or [])),
+                ("Administrative areas covered", ", ".join(coverage.get("administrative_areas_covered") or coverage.get("districts_covered") or [])),
                 ("Facility types", ", ".join(coverage.get("facility_types") or [])),
             ],
         )
@@ -1812,7 +1817,7 @@ def _add_statistical_dashboard(document: Document, report: Report, facility_coun
 # ====================================================================
 
 def _add_report_narrative(document: Document, content: str) -> None:
-    document.add_heading("Narrative Report", level=1)
+    document.add_heading("Legacy Narrative Appendix", level=1)
     for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line:
@@ -1834,6 +1839,319 @@ def _add_report_narrative(document: Document, content: str) -> None:
         else:
             p = document.add_paragraph(line)
             _add_paragraph_spacing(p, before_pt=0, after_pt=6)
+
+
+# ====================================================================
+# V4 finding-block report renderer
+# ====================================================================
+
+def _as_text_list(value) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if str(item)) or "Not available"
+    return str(value) if value else "Not available"
+
+
+def _add_action_box(document: Document, finding: dict) -> None:
+    table = document.add_table(rows=4, cols=2)
+    table.style = "Table Grid"
+    rows = [
+        ("Required action", finding.get("required_action")),
+        ("Owner role", finding.get("owner_role")),
+        ("Proposed timeline", finding.get("proposed_timeline")),
+        ("Evidence required for closure", finding.get("evidence_required_for_closure")),
+    ]
+    for row_idx, (label, value) in enumerate(rows):
+        cells = table.rows[row_idx].cells
+        cells[0].text = label
+        cells[0].paragraphs[0].runs[0].font.bold = True
+        _set_cell_shading(cells[0], UCMB_LIGHT_BLUE_BG)
+        cells[1].text = str(value or "Not available")
+    document.add_paragraph()
+
+
+def _add_dhis2_classification_table(document: Document, structured: dict) -> None:
+    classification = (structured.get("dhis2_sync_summary") or {}).get("response_classification") or {}
+    rows = [
+        ["Value returned", classification.get("VALUE_RETURNED", 0), "Stored DHIS2 value was available for comparison."],
+        ["True zero", classification.get("TRUE_ZERO", 0), "DHIS2 returned a stored numeric zero."],
+        ["No data returned", classification.get("NO_DATA", 0), "No stored value was returned and this cannot be treated as zero without verification."],
+        ["Sync error", classification.get("SYNC_ERROR", 0), "DHIS2/API/configuration issue affected extraction."],
+        ["Not applicable", classification.get("NOT_APPLICABLE", 0), "Row was not applicable where explicitly classified."],
+        ["Unknown", classification.get("UNKNOWN", 0), "Response status was not available or could not be classified."],
+    ]
+    _add_data_table(document, "DHIS2 Response Classification", ["Classification", "Count", "Interpretation"], rows, limit=10)
+
+
+def _add_source_document_review_table(document: Document, structured: dict) -> None:
+    if structured.get("source_document_assessment_status") == "NOT_ASSESSED" or not structured.get("source_document_checks"):
+        p = document.add_paragraph("Source document quality was not fully measured in this round.")
+        p.runs[0].font.italic = True
+        _add_data_table(
+            document,
+            "Next-Round Source Document Requirements",
+            ["Required check", "Purpose"],
+            [
+                ["Register availability", "Confirm that the source register was present for verification."],
+                ["Register completeness", "Confirm pages and reporting period entries are complete."],
+                ["Register legibility", "Confirm entries can be audited."],
+                ["Monthly summary presence", "Confirm monthly totals were prepared from register entries."],
+                ["Report sign-off", "Confirm facility review and approval before submission."],
+                ["HMIS 105 copy availability", "Confirm the submitted HMIS 105 report copy is available."],
+                ["HMIS 108 copy availability where applicable", "Confirm related monthly summary forms are available when relevant."],
+            ],
+        )
+        return
+    rows = [
+        [
+            item.get("source_document_name"),
+            "Yes" if item.get("available") else "No",
+            "Yes" if item.get("complete") else "No",
+            "Yes" if item.get("legible") else "No",
+            item.get("missing_pages"),
+        ]
+        for item in structured.get("source_document_checks") or []
+    ]
+    _add_data_table(document, "Source Document Checklist", ["Document", "Available", "Complete", "Legible", "Missing pages"], rows)
+
+
+def _render_v4_executive_snapshot(document: Document, structured: dict, blocks: dict) -> None:
+    _add_section_heading(document, "Executive Snapshot")
+    snapshot = blocks.get("executive_snapshot") or {}
+    for key in ("headline", "primary_finding", "management_implication"):
+        _add_narrative_paragraphs(document, snapshot.get(key))
+    urgent = snapshot.get("urgent_actions") or []
+    if urgent:
+        _add_data_table(document, "Urgent Management Actions", ["Action"], [[item] for item in urgent], limit=10)
+
+
+def _render_critical_chase_list(document: Document, structured: dict, blocks: dict) -> None:
+    rows = structured.get("critical_chase_list") or []
+    if not rows:
+        return
+    _add_section_heading(document, "Critical Chase List")
+    _add_narrative_paragraphs(document, blocks.get("critical_chase_list_intro"))
+    _add_data_table(
+        document,
+        "Critical Death/High-Risk Rows for Reconciliation",
+        ["Facility", "Administrative area", "Indicator", "HMIS code", "Register", "HMIS 105", "DHIS2", "Gap", "Pattern", "Owner role", "Proposed target date", "Evidence required"],
+        [
+            [
+                row.get("facility"),
+                row.get("administrative_area"),
+                row.get("indicator"),
+                row.get("hmis_code"),
+                row.get("register_value"),
+                row.get("hmis105_value"),
+                row.get("dhis2_value"),
+                row.get("gap"),
+                row.get("pattern"),
+                row.get("owner_role"),
+                row.get("proposed_target_date"),
+                row.get("evidence_required_for_closure"),
+            ]
+            for row in rows
+        ],
+        limit=20,
+    )
+
+
+def _render_scope_and_method(document: Document, structured: dict, blocks: dict) -> None:
+    _add_section_heading(document, "Scope and Method")
+    scope = blocks.get("scope_and_method") or {}
+    _add_narrative_paragraphs(document, scope.get("scope_summary"))
+    _add_narrative_paragraphs(document, scope.get("method_summary"))
+    _add_narrative_paragraphs(document, scope.get("denominator_note"))
+    _add_narrative_paragraphs(document, scope.get("severity_note"))
+    coverage = structured.get("coverage") or {}
+    _add_key_value_table(
+        document,
+        "Coverage Summary",
+        [
+            ("Facilities selected", coverage.get("total_facilities_selected")),
+            ("Facilities assessed", coverage.get("facilities_assessed")),
+            ("Facilities pending", coverage.get("facilities_pending")),
+            ("Completion percent", coverage.get("percentage_completed")),
+            ("Administrative areas covered", ", ".join(coverage.get("administrative_areas_covered") or coverage.get("districts_covered") or [])),
+            ("Actual district-level metadata", "Not available in the structured input"),
+            ("Facility types", ", ".join(coverage.get("facility_types") or [])),
+        ],
+    )
+
+
+def _render_v4_findings(document: Document, structured: dict, blocks: dict, facility_count: int) -> None:
+    _add_section_heading(document, "Main Findings")
+    for finding in blocks.get("findings") or []:
+        title = f"Finding {finding.get('finding_number')}: {finding.get('finding_title')}"
+        document.add_heading(title, level=2)
+        _add_narrative_paragraphs(document, f"Evidence: {finding.get('evidence')}")
+        _add_narrative_paragraphs(document, f"Interpretation: {finding.get('interpretation')}")
+        _add_key_value_table(
+            document,
+            "Affected Scope",
+            [
+                ("Affected facilities", _as_text_list(finding.get("affected_facilities"))),
+                ("Affected indicators", _as_text_list(finding.get("affected_indicators"))),
+                ("Affected administrative areas", _as_text_list(finding.get("affected_administrative_areas"))),
+                ("Risk level", finding.get("risk_level")),
+            ],
+        )
+        _add_narrative_paragraphs(document, f"Implication: {finding.get('implication')}")
+        _add_action_box(document, finding)
+
+        title_lower = str(finding.get("finding_title", "")).lower()
+        category_lower = str(finding.get("finding_category", "")).lower()
+        if "overall" in title_lower or "quality" in category_lower:
+            score = structured.get("dqa_score") or {}
+            _add_score_card_table(
+                document,
+                "Severity Distribution Supporting This Finding",
+                [
+                    ("Exact matches", score.get("exact_count")),
+                    ("Minor discrepancies", score.get("minor_count")),
+                    ("Moderate discrepancies", score.get("moderate_count")),
+                    ("Major discrepancies", score.get("major_count")),
+                    ("Critical discrepancies", score.get("critical_count")),
+                    ("Missing values", score.get("missing_count")),
+                ],
+            )
+            chart = _chart_severity_distribution(structured)
+            if chart:
+                _add_chart_to_document(document, chart)
+        if "summarization" in title_lower or "pathway" in category_lower:
+            chart = _chart_discrepancy_types(structured)
+            if chart:
+                _add_chart_to_document(document, chart)
+        if "indicator" in title_lower:
+            chart = _chart_indicator_performance(structured)
+            if chart:
+                _add_chart_to_document(document, chart)
+        if "facility" in title_lower:
+            chart = _chart_facility_scores(structured)
+            if chart and facility_count > 1:
+                _add_chart_to_document(document, chart)
+        if "dhis2" in title_lower or "synchronization" in category_lower:
+            _add_dhis2_classification_table(document, structured)
+        if "source document" in title_lower:
+            _add_source_document_review_table(document, structured)
+
+
+def _render_v4_facility_performance(document: Document, structured: dict, blocks: dict, facility_count: int) -> None:
+    _add_section_heading(document, "Facility Performance")
+    _add_narrative_paragraphs(document, (blocks.get("facility_performance_summary") or {}).get("summary"))
+    if facility_count > 1:
+        chart = _chart_facility_scores(structured)
+        if chart:
+            _add_chart_to_document(document, chart)
+    rows = [
+        [
+            item.get("facility_name"),
+            item.get("administrative_area") or item.get("district"),
+            item.get("dqa_score"),
+            item.get("score_category"),
+            item.get("exact_count"),
+            item.get("major_count"),
+            item.get("critical_count"),
+            item.get("missing_count"),
+        ]
+        for item in structured.get("facility_score_ranking") or []
+    ]
+    _add_data_table(document, "Facility Action Matrix", ["Facility", "Administrative area", "Score", "Category", "Exact", "Major", "Critical", "Missing"], rows)
+
+
+def _render_v4_indicator_performance(document: Document, structured: dict, blocks: dict) -> None:
+    _add_section_heading(document, "Indicator Performance")
+    _add_narrative_paragraphs(document, (blocks.get("indicator_performance_summary") or {}).get("summary"))
+    chart = _chart_indicator_performance(structured)
+    if chart:
+        _add_chart_to_document(document, chart)
+    rows = [
+        [
+            item.get("hmis_code"),
+            item.get("indicator_name"),
+            item.get("total_rows") or item.get("n"),
+            item.get("exact_match_rate"),
+            item.get("major_discrepancy_count"),
+            item.get("critical_discrepancy_count"),
+            "Review definition/coding and reconcile repeated discrepancies.",
+        ]
+        for item in structured.get("indicator_findings") or []
+    ]
+    _add_data_table(document, "Indicator Action Matrix", ["HMIS code", "Indicator", "N", "Exact rate", "Major", "Critical", "Recommended action"], rows)
+
+
+def _render_v4_corrective_action_plan(document: Document, structured: dict, blocks: dict) -> None:
+    _add_section_heading(document, "Corrective Action Plan")
+    plan = blocks.get("corrective_action_plan") or {}
+    _add_narrative_paragraphs(document, plan.get("summary"))
+    rows = [
+        [
+            action.get("action_id"),
+            action.get("linked_finding"),
+            action.get("facility_or_scope"),
+            action.get("indicator_or_area"),
+            action.get("action"),
+            action.get("owner_role"),
+            action.get("proposed_target_date"),
+            action.get("evidence_required_for_closure"),
+            action.get("status"),
+        ]
+        for action in plan.get("actions") or structured.get("ai_corrective_actions") or []
+    ]
+    _add_data_table(
+        document,
+        "30/60/90-Day Corrective Action Tracker",
+        ["Action ID", "Linked finding", "Facility/scope", "Indicator/area", "Action", "Owner role", "Proposed target date", "Evidence required", "Status"],
+        rows,
+        limit=50,
+    )
+
+
+def _render_v4_tail_sections(document: Document, structured: dict, blocks: dict) -> None:
+    _add_section_heading(document, "DHIS2 No-Data Review")
+    review = blocks.get("dhis2_no_data_review") or {}
+    _add_narrative_paragraphs(document, review.get("summary"))
+    _add_narrative_paragraphs(document, review.get("interpretation"))
+    _add_narrative_paragraphs(document, review.get("required_platform_fix"))
+    _add_dhis2_classification_table(document, structured)
+
+    _add_section_heading(document, "Source Document Review")
+    review = blocks.get("source_document_review") or {}
+    _add_narrative_paragraphs(document, review.get("summary"))
+    _add_narrative_paragraphs(document, review.get("interpretation"))
+    _add_narrative_paragraphs(document, review.get("next_round_requirement"))
+    _add_source_document_review_table(document, structured)
+
+    _render_v4_corrective_action_plan(document, structured, blocks)
+
+    _add_section_heading(document, "Limitations")
+    for item in blocks.get("limitations") or ["Limitations were not available in the structured data."]:
+        document.add_paragraph(str(item), style="List Bullet")
+
+    _add_section_heading(document, "Next Round Improvements")
+    for item in blocks.get("next_round_improvements") or ["Next-round improvements were not available in the structured data."]:
+        document.add_paragraph(str(item), style="List Bullet")
+
+    _add_section_heading(document, "Appendix Notes")
+    _add_narrative_paragraphs(document, "Full detailed comparison rows are available in the companion XLSX export.")
+    if structured.get("include_comments"):
+        _add_narrative_paragraphs(document, "Detailed field comments are not dumped in the main report. Sanitized comments are available in the companion XLSX export.")
+    else:
+        _add_narrative_paragraphs(document, "Field comments were excluded from this generated management report.")
+
+    _add_section_heading(document, "Conclusion")
+    _add_narrative_paragraphs(document, blocks.get("conclusion"))
+
+
+def _render_v4_finding_block_report(document: Document, report: Report, facility_count: int) -> None:
+    structured = report.structured_input_json or {}
+    blocks = structured.get("finding_blocks") or {}
+    _render_v4_executive_snapshot(document, structured, blocks)
+    _render_critical_chase_list(document, structured, blocks)
+    _render_scope_and_method(document, structured, blocks)
+    _render_v4_findings(document, structured, blocks, facility_count)
+    _render_v4_facility_performance(document, structured, blocks, facility_count)
+    _render_v4_indicator_performance(document, structured, blocks)
+    _render_v4_tail_sections(document, structured, blocks)
 
 
 # ====================================================================
@@ -1888,7 +2206,9 @@ def export_report_docx(db: Session, report: Report, current_user: User) -> tuple
     # ── Metric boxes (headline KPIs) ──
     _add_metric_boxes(document, report)
 
-    if has_blended_sections:
+    if structured.get("finding_blocks"):
+        _render_v4_finding_block_report(document, report, facility_count)
+    elif has_blended_sections:
         # New path: AI returned structured per-section narrative. Walk each section
         # and interleave prose with tables and charts so the document reads as one
         # coherent narrative rather than dashboard + essay.
@@ -1914,79 +2234,188 @@ def export_report_docx(db: Session, report: Report, current_user: User) -> tuple
 
 def export_report_xlsx(db: Session, report: Report, current_user: User) -> tuple[str, bytes, str]:
     _ensure_export_allowed(report, ExportType.XLSX)
-    workbook = Workbook()
-    summary_sheet = workbook.active
-    summary_sheet.title = "Summary"
-    summary_sheet["A1"] = report.title
-    summary_sheet["A1"].font = Font(bold=True, size=14)
-    summary_sheet["A3"] = "Report type"
-    summary_sheet["B3"] = report.report_type.value
-    summary_sheet["A4"] = "Status"
-    summary_sheet["B4"] = report.status.value
-    summary_sheet["A6"] = "Content"
-    for idx, line in enumerate(_current_report_content(report).splitlines(), start=7):
-        summary_sheet.cell(row=idx, column=1, value=line)
-
     structured = report.structured_input_json or {}
-    if report.report_type.value == "FACILITY_DQA_REPORT":
-        results_sheet = workbook.create_sheet("Comparison Results")
-        headers = ["Indicator", "HMIS code", "Register", "HMIS 105", "DHIS2", "Severity", "Issue Type"]
-        results_sheet.append(headers)
-        for row in structured.get("comparison_rows", []):
-            results_sheet.append([
-                row.get("indicator_name"),
-                row.get("hmis_code"),
-                row.get("register_value"),
-                row.get("hmis105_value"),
-                row.get("dhis2_value_at_assessment"),
-                row.get("severity"),
-                row.get("issue_type"),
-            ])
-        docs_sheet = workbook.create_sheet("Source Documents")
-        docs_sheet.append(["Source document", "Available", "Complete", "Legible", "Missing pages", "Comment"])
-        for item in structured.get("source_document_checks", []):
-            docs_sheet.append([
+    blocks = structured.get("finding_blocks") or {}
+    score = structured.get("dqa_score") or {}
+    summary = structured.get("summary") or {}
+    dhis2_summary = structured.get("dhis2_sync_summary") or {}
+    response_classification = dhis2_summary.get("response_classification") or {}
+
+    workbook = Workbook()
+    dashboard = workbook.active
+    dashboard.title = "Executive Dashboard"
+
+    def header(sheet, columns: list[str]) -> None:
+        sheet.append(columns)
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+
+    header(dashboard, ["metric", "value", "interpretation"])
+    dashboard.append(["report_title", report.title, "Generated management report title."])
+    dashboard.append(["report_type", report.report_type.value, "Report type selected by the user."])
+    dashboard.append(["status", report.status.value, "Report lifecycle status."])
+    dashboard.append(["overall_score_or_exact_rate", score.get("score_percent") or summary.get("exact_match_rate"), "Higher values indicate stronger source alignment."])
+    dashboard.append(["critical_count", score.get("critical_count") or summary.get("critical_discrepancy_count"), "Critical rows require immediate reconciliation."])
+    dashboard.append(["dhis2_no_data_count", response_classification.get("NO_DATA") or dhis2_summary.get("dhis2_no_data_count"), "No-data is not a true zero without verification."])
+    dashboard.append(["source_document_status", structured.get("source_document_assessment_status", "UNKNOWN"), "NOT_ASSESSED means do not interpret completeness as 0%."])
+
+    facility_sheet = workbook.create_sheet("Facility Ranking")
+    header(facility_sheet, ["facility", "administrative_area", "dqa_score", "category", "exact_count", "minor_count", "moderate_count", "major_count", "critical_count", "flagged_count", "main_issue", "action_priority"])
+    for item in structured.get("facility_score_ranking") or []:
+        flagged = (item.get("moderate_count") or 0) + (item.get("major_count") or 0) + (item.get("critical_count") or 0) + (item.get("missing_count") or 0)
+        facility_sheet.append([
+            item.get("facility_name"),
+            item.get("administrative_area") or item.get("district"),
+            item.get("dqa_score"),
+            item.get("score_category"),
+            item.get("exact_count"),
+            item.get("minor_count"),
+            item.get("moderate_count"),
+            item.get("major_count"),
+            item.get("critical_count"),
+            flagged,
+            "Review major, critical, missing, and no-data rows.",
+            "High" if (item.get("critical_count") or 0) else "Medium" if flagged else "Routine",
+        ])
+
+    indicator_sheet = workbook.create_sheet("Indicator Ranking")
+    header(indicator_sheet, ["hmis_code", "indicator_name", "n", "exact_rate", "major_count", "critical_count", "all_zero_note", "interpretation", "recommended_action"])
+    for item in structured.get("indicator_findings") or []:
+        indicator_sheet.append([
+            item.get("hmis_code"),
+            item.get("indicator_name"),
+            item.get("total_rows") or item.get("n"),
+            item.get("exact_match_rate"),
+            item.get("major_discrepancy_count"),
+            item.get("critical_discrepancy_count"),
+            "Interpret cautiously if all or nearly all values are zero.",
+            "Prioritize indicators with low exact rate, major discrepancies, or critical discrepancies.",
+            "Review definition/coding and reconcile repeated discrepancies.",
+        ])
+
+    chase_sheet = workbook.create_sheet("Critical Chase List")
+    header(chase_sheet, ["facility", "administrative_area", "indicator", "hmis_code", "register_value", "hmis105_value", "dhis2_value", "gap", "pattern", "owner_role", "proposed_target_date", "evidence_required_for_closure"])
+    for row in structured.get("critical_chase_list") or []:
+        chase_sheet.append([
+            row.get("facility"),
+            row.get("administrative_area"),
+            row.get("indicator"),
+            row.get("hmis_code"),
+            row.get("register_value"),
+            row.get("hmis105_value"),
+            row.get("dhis2_value"),
+            row.get("gap"),
+            row.get("pattern"),
+            row.get("owner_role"),
+            row.get("proposed_target_date"),
+            row.get("evidence_required_for_closure"),
+        ])
+
+    action_sheet = workbook.create_sheet("Corrective Action Tracker")
+    header(action_sheet, ["action_id", "linked_finding", "facility_or_scope", "indicator_or_area", "action", "owner_role", "proposed_target_date", "evidence_required_for_closure", "status"])
+    for action in (structured.get("ai_corrective_actions") or (blocks.get("corrective_action_plan") or {}).get("actions") or []):
+        action_sheet.append([
+            action.get("action_id"),
+            action.get("linked_finding"),
+            action.get("facility_or_scope"),
+            action.get("indicator_or_area"),
+            action.get("action"),
+            action.get("owner_role"),
+            action.get("proposed_target_date"),
+            action.get("evidence_required_for_closure"),
+            action.get("status"),
+        ])
+
+    dhis2_sheet = workbook.create_sheet("DHIS2 Sync Audit")
+    header(dhis2_sheet, ["facility", "indicator", "hmis_code", "dhis2_value", "dhis2_response_status", "last_sync_time", "sync_error", "interpretation"])
+    metadata_by_indicator = {
+        item.get("indicator_id"): item for item in structured.get("dhis2_extraction_metadata") or []
+    }
+    for row in structured.get("comparison_rows") or []:
+        metadata = metadata_by_indicator.get(row.get("indicator_id")) or {}
+        status_value = row.get("dhis2_response_status") or metadata.get("dhis2_response_status")
+        dhis2_sheet.append([
+            row.get("facility_name"),
+            row.get("indicator_name"),
+            row.get("hmis_code"),
+            row.get("dhis2_value_at_assessment"),
+            status_value,
+            metadata.get("dhis2_extracted_at"),
+            metadata.get("dhis2_error_message") or row.get("dhis2_error_message"),
+            "No-data requires verification and is not true zero." if status_value == "NO_DATA" else "Use with comparison severity and issue type.",
+        ])
+
+    source_sheet = workbook.create_sheet("Source Document Checklist")
+    header(source_sheet, ["facility", "source_document", "available", "complete", "legible", "missing_pages", "comment", "assessment_status"])
+    if structured.get("source_document_checks"):
+        for item in structured.get("source_document_checks") or []:
+            source_sheet.append([
+                item.get("facility_name") or (structured.get("facility") or {}).get("facility_name"),
                 item.get("source_document_name"),
                 item.get("available"),
                 item.get("complete"),
                 item.get("legible"),
                 item.get("missing_pages"),
-                item.get("comment"),
-            ])
-        actions_sheet = workbook.create_sheet("Corrective Actions")
-        actions_sheet.append(["Action", "Severity", "Status", "Responsible", "Deadline"])
-        for item in structured.get("corrective_actions", []):
-            actions_sheet.append([
-                item.get("action_description"),
-                item.get("severity"),
-                item.get("status"),
-                item.get("responsible_person"),
-                item.get("deadline"),
+                sanitize_comment(item.get("comment")),
+                "ASSESSED",
             ])
     else:
-        facility_sheet = workbook.create_sheet("Facility Scores")
-        facility_sheet.append(["Facility", "Score", "Category"])
-        for item in structured.get("facility_score_ranking", []):
-            facility_sheet.append([item.get("facility_name"), item.get("dqa_score"), item.get("score_category")])
-        indicator_sheet = workbook.create_sheet("Indicator Findings")
-        indicator_sheet.append(["Indicator", "HMIS code", "Exact match rate", "Major", "Critical"])
-        for item in structured.get("indicator_findings", []):
-            indicator_sheet.append([
-                item.get("indicator_name"),
-                item.get("hmis_code"),
-                item.get("exact_match_rate"),
-                item.get("major_discrepancy_count"),
-                item.get("critical_discrepancy_count"),
-            ])
-        actions_sheet = workbook.create_sheet("Corrective Actions")
-        actions_sheet.append(["Action", "Severity", "Status", "Facility"])
-        for item in structured.get("corrective_actions", []):
-            actions_sheet.append([
-                item.get("action_description"),
-                item.get("severity"),
-                item.get("status"),
-                item.get("facility_name"),
-            ])
+        source_sheet.append(["", "", "", "", "", "", "Source document quality was not fully measured in this round.", "NOT_ASSESSED"])
+
+    submitted_sheet = workbook.create_sheet("Submitted Data")
+    header(submitted_sheet, ["facility", "administrative_area", "indicator", "hmis_code", "register_value", "hmis105_value", "dhis2_value", "dhis2_response_status", "severity", "issue_type", "comparison_notes"])
+    for row in structured.get("comparison_rows") or []:
+        submitted_sheet.append([
+            row.get("facility_name"),
+            row.get("administrative_area") or row.get("district"),
+            row.get("indicator_name"),
+            row.get("hmis_code"),
+            row.get("register_value"),
+            row.get("hmis105_value"),
+            row.get("dhis2_value_at_assessment"),
+            row.get("dhis2_response_status"),
+            row.get("severity"),
+            row.get("issue_type"),
+            row.get("comparison_notes"),
+        ])
+
+    comments_sheet = workbook.create_sheet("Field Comments")
+    header(comments_sheet, ["facility", "indicator", "comment_type", "sanitized_comment"])
+    if structured.get("include_comments"):
+        for item in structured.get("general_facility_comments") or []:
+            comments_sheet.append([item.get("facility_name"), "", "general", sanitize_comment(item.get("comment"))])
+        for item in structured.get("manager_comments") or []:
+            comments_sheet.append([item.get("facility_name"), "", "manager", sanitize_comment(item.get("comment"))])
+        for row in structured.get("comparison_rows") or []:
+            if row.get("assessor_comment"):
+                comments_sheet.append([row.get("facility_name"), row.get("indicator_name"), "assessor", sanitize_comment(row.get("assessor_comment"))])
+    else:
+        comments_sheet.append(["", "", "excluded", "Field comments were excluded from this management report by request/default."])
+
+    dictionary_sheet = workbook.create_sheet("Data Dictionary")
+    header(dictionary_sheet, ["field_or_value", "meaning"])
+    dictionary_rows = [
+        ["administrative_area", "Facility geography as available in the structured input. Do not treat as true district-level metadata unless verified."],
+        ["EXACT", "Zero difference across comparable sources."],
+        ["MINOR", "Difference within configured tolerance."],
+        ["MODERATE", "Above tolerance but not major."],
+        ["MAJOR", "Substantial discrepancy requiring action."],
+        ["CRITICAL", "Death/high-risk indicator discrepancy or critical row requiring reconciliation."],
+        ["MISSING", "One or more required source values missing or unavailable."],
+        ["VALUE_RETURNED", "DHIS2 returned a stored value."],
+        ["TRUE_ZERO", "DHIS2 returned a stored numeric zero."],
+        ["NO_DATA", "DHIS2 returned no stored value; verify before interpreting."],
+        ["SYNC_ERROR", "DHIS2 extraction/configuration/API problem."],
+        ["source_document_assessment_status", "NOT_ASSESSED means no checklist records existed, not a 0% score."],
+        ["proposed_target_date", "AI/template proposed timeline; not an official deadline unless approved by management."],
+    ]
+    for row in dictionary_rows:
+        dictionary_sheet.append(row)
+
+    for sheet in workbook.worksheets:
+        for column_cells in sheet.columns:
+            length = max(len(str(cell.value or "")) for cell in column_cells)
+            sheet.column_dimensions[column_cells[0].column_letter].width = min(max(length + 2, 12), 45)
 
     output = BytesIO()
     workbook.save(output)

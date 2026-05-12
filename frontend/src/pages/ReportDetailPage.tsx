@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { FileDown, PencilLine, ShieldCheck } from "lucide-react";
+import { ReportFindingPreview } from "../components/reports/ReportFindingPreview";
 import { ReportPreview } from "../components/reports/ReportPreview";
 import { ReportStatusBadge } from "../components/reports/ReportStatusBadge";
 import { Button } from "../components/ui/Button";
@@ -108,6 +109,8 @@ export function ReportDetailPage() {
       {message ? (
         <div className="rounded-2xl border border-brand-border bg-white px-4 py-4 text-sm text-brand-text shadow-soft">{message}</div>
       ) : null}
+
+      <ReportFindingPreview structured={report.structured_input_json} />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <ReportPreview title="Current preview" content={report.display_content} />

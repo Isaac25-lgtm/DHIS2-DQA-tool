@@ -27,6 +27,8 @@ from app.services.assessment_workspace_service import get_assessment_facility_fo
 from app.services.scoring_service import calculate_facility_score
 
 HIGH_RISK_HMIS_CODES = {"105-MA05B1", "105-MA05C1", "105-MA12", "105-MA13"}
+DHIS2_NO_DATA_STATUSES = {"NO_DATA"}
+DHIS2_ERROR_STATUSES = {"ERROR", "NOT_CONFIGURED", "SYNC_ERROR"}
 
 
 def _ensure_can_run_comparison(assessment_facility: AssessmentFacility, current_user: User) -> None:
@@ -98,6 +100,21 @@ def _build_missing_result(missing_fields: list[str]) -> tuple[DqaIssueType, Seve
     )
 
 
+def classify_dhis2_response_status(dqa_value: DqaValue) -> str:
+    status_value = (dqa_value.dhis2_api_status or "").upper()
+    if status_value in DHIS2_NO_DATA_STATUSES:
+        return "NO_DATA"
+    if status_value in DHIS2_ERROR_STATUSES:
+        return "SYNC_ERROR" if status_value == "ERROR" else status_value
+    if dqa_value.dhis2_value_at_assessment == 0 and status_value == "SUCCESS":
+        return "TRUE_ZERO"
+    if dqa_value.dhis2_value_at_assessment is not None:
+        return "VALUE_RETURNED"
+    if status_value:
+        return "UNKNOWN"
+    return "UNKNOWN"
+
+
 def compare_single_value(
     dqa_value: DqaValue,
     selected_indicator: AssessmentRoundIndicator,
@@ -106,6 +123,7 @@ def compare_single_value(
     register_value = dqa_value.register_value
     hmis_value = dqa_value.hmis105_value
     dhis2_value = dqa_value.dhis2_value_at_assessment
+    dhis2_response_status = classify_dhis2_response_status(dqa_value)
     threshold = selected_indicator.custom_threshold_percent or selected_indicator.indicator.default_discrepancy_threshold_percent
     high_risk = _is_high_risk_indicator(selected_indicator)
     missing_fields = [
@@ -113,6 +131,8 @@ def compare_single_value(
         for name, value in (("Register", register_value), ("HMIS 105", hmis_value), ("DHIS2", dhis2_value))
         if value is None
     ]
+    if dhis2_response_status in {"NO_DATA", "SYNC_ERROR", "NOT_CONFIGURED", "UNKNOWN"} and "DHIS2" not in missing_fields:
+        missing_fields.append("DHIS2")
 
     dqa_value.register_vs_hmis_difference = hmis_value - register_value if register_value is not None and hmis_value is not None else None
     dqa_value.hmis_vs_dhis2_difference = dhis2_value - hmis_value if hmis_value is not None and dhis2_value is not None else None
@@ -129,6 +149,8 @@ def compare_single_value(
         dqa_value.severity = severity
         dqa_value.comparison_status = ComparisonStatus.NEEDS_REVIEW
         dqa_value.comparison_notes = notes
+        if dhis2_response_status == "NO_DATA":
+            dqa_value.comparison_notes = "DHIS2 returned no stored value; this requires verification and must not be interpreted as true zero."
         return dqa_value
 
     if register_value == 0 and hmis_value == 0 and dhis2_value == 0:
@@ -193,6 +215,7 @@ def serialize_comparison_row(
         register_value=dqa_value.register_value,
         hmis105_value=dqa_value.hmis105_value,
         dhis2_value_at_assessment=dqa_value.dhis2_value_at_assessment,
+        dhis2_response_status=classify_dhis2_response_status(dqa_value),
         register_vs_hmis_difference=dqa_value.register_vs_hmis_difference,
         hmis_vs_dhis2_difference=dqa_value.hmis_vs_dhis2_difference,
         register_vs_dhis2_difference=dqa_value.register_vs_dhis2_difference,

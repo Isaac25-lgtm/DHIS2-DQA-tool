@@ -333,7 +333,7 @@ def test_dhis2_service_normalizes_simple_uids_and_operands(monkeypatch) -> None:
     assert response["RYcEItpNCUp.Ck8FveDhZSy"]["value"] == 55
 
 
-def test_dhis2_service_zero_fills_missing_analytics_rows_after_successful_sync() -> None:
+def test_dhis2_service_preserves_no_data_distinct_from_true_zero() -> None:
     payload = {
         "headers": [{"name": "dx"}, {"name": "value"}],
         "rows": [["maternalDeathsUid", "0"]],
@@ -347,7 +347,7 @@ def test_dhis2_service_zero_fills_missing_analytics_rows_after_successful_sync()
 
     assert response["maternalDeathsUid"]["value"] == 0
     assert response["maternalDeathsUid"]["status"] == "SUCCESS"
-    assert response["newbornDeathsUid"]["value"] == 0
+    assert response["newbornDeathsUid"]["value"] is None
     assert response["newbornDeathsUid"]["status"] == "NO_DATA"
 
 

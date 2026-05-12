@@ -128,10 +128,21 @@ def test_null_dhis2_returns_dhis2_value_missing() -> None:
 
 def test_register_zero_and_dhis2_zero_does_not_divide_by_zero() -> None:
     value = _dqa_value(0, 0, 0)
+    value.dhis2_api_status = "SUCCESS"
     compared = compare_single_value(value, _selected_indicator(), None)
     assert compared.issue_type == DqaIssueType.NO_ISSUE
     assert compared.severity == SeverityLevel.EXACT
     assert float(compared.discrepancy_percent) == 0.0
+
+
+def test_register_hmis_zero_and_dhis2_no_data_is_not_exact() -> None:
+    value = _dqa_value(0, 0, 0)
+    value.dhis2_api_status = "NO_DATA"
+    compared = compare_single_value(value, _selected_indicator(), None)
+    assert compared.issue_type == DqaIssueType.DHIS2_VALUE_MISSING
+    assert compared.severity == SeverityLevel.MISSING
+    assert compared.comparison_status == ComparisonStatus.NEEDS_REVIEW
+    assert "must not be interpreted as true zero" in compared.comparison_notes
 
 
 def test_register_zero_and_dhis2_positive_sets_major_or_critical_without_percent() -> None:

@@ -22,6 +22,7 @@ class ComparisonRowResponse(BaseModel):
     register_value: int | None
     hmis105_value: int | None
     dhis2_value_at_assessment: int | None
+    dhis2_response_status: str | None = None
     register_vs_hmis_difference: int | None
     hmis_vs_dhis2_difference: int | None
     register_vs_dhis2_difference: int | None

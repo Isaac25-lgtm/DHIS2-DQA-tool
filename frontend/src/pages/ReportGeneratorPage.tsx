@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card } from "../components/ui/Card";
 import { ReportGeneratorForm } from "../components/reports/ReportGeneratorForm";
+import { ReportFindingPreview } from "../components/reports/ReportFindingPreview";
 import { ReportPreview } from "../components/reports/ReportPreview";
 import { assessmentRoundService } from "../services/assessmentRoundService";
 import { reportService } from "../services/reportService";
@@ -85,6 +86,7 @@ export function ReportGeneratorPage() {
 
       {generatedReport ? (
         <div className="space-y-4">
+          <ReportFindingPreview structured={generatedReport.structured_input_json} />
           <ReportPreview title={generatedReport.title} content={generatedReport.display_content} />
           <div className="flex justify-end">
             <button

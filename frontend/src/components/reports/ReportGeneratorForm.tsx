@@ -96,7 +96,7 @@ export function ReportGeneratorForm({
         <div>
           <p className="text-sm font-semibold text-brand-text">Include assessor and manager comments</p>
           <p className="mt-1 text-xs text-brand-muted">
-            Comments are excluded by default. Include them only when you intentionally want the AI or template report to consider them.
+            Comments may contain informal field notes and are excluded from management reports by default. Include them only when you intentionally want the AI or template report to summarize them for audit review.
           </p>
         </div>
       </label>
